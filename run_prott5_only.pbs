@@ -1,0 +1,26 @@
+#!/bin/bash
+#PBS -N prott5_only
+#PBS -q apolloq
+#PBS -l select=1:host=gnode6:ncpus=10:ngpus=1
+#PBS -l walltime=720:00:00
+#PBS -joe
+#PBS -P external
+
+cd $PBS_O_WORKDIR
+eval "$(conda shell.bash hook)"
+
+echo "=== Job started at $(date) ==="
+nvidia-smi --query-gpu=index,name,memory.used --format=csv
+
+echo ""
+echo "=== ProtT5 benchmark ==="
+conda activate prott5_env
+python run_benchmark.py --model prott5 --device cuda --batch_size 16
+
+echo ""
+echo "=== Re-run analysis ==="
+conda activate esm_meta
+python analysis.py
+
+echo ""
+echo "=== Job finished at $(date) ==="

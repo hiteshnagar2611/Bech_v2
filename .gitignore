@@ -1,0 +1,24 @@
+# PBS output logs
+*.o*
+*.e*
+
+# Checkpoints
+*.pkl
+
+# Jupyter
+.ipynb_checkpoints/
+jupyter.log
+
+# Python
+__pycache__/
+*.pyc
+
+# Conda
+.conda/
+
+# HF cache
+.cache/
+
+# Test files
+dna_test.tsv
+dna_test.o*

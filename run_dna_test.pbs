@@ -1,0 +1,42 @@
+#!/bin/bash
+#PBS -N dna_test
+#PBS -q apolloq
+#PBS -l select=1:host=gnode6:ncpus=10:ngpus=1
+#PBS -l walltime=01:00:00
+#PBS -joe
+#PBS -P external
+
+cd $PBS_O_WORKDIR
+mkdir -p results figures logs
+
+eval "$(conda shell.bash hook)"
+
+echo "=== Test started at $(date) ==="
+nvidia-smi --query-gpu=index,name,memory.total,memory.used --format=csv
+
+conda activate dna_env
+
+echo ""
+echo "=== Preparing DNA variant data ==="
+python prepare_dna_data.py
+
+echo ""
+echo "=== Creating 10-variant test set ==="
+head -11 dna_variants.tsv > dna_test.tsv
+echo "Test variants: $(wc -l < dna_test.tsv)"
+
+echo ""
+echo "=== Test DNABERT-2 (10 variants) ==="
+python run_benchmark.py --model dnabert2 --device cuda --batch_size 2 --dna_input dna_test.tsv --checkpoint_dir results_test
+
+echo ""
+echo "=== Test HyenaDNA (10 variants) ==="
+python run_benchmark.py --model hyenadna --device cuda --batch_size 2 --dna_input dna_test.tsv --checkpoint_dir results_test
+
+echo ""
+echo "=== Test NT-v2 (10 variants) ==="
+python run_benchmark.py --model ntv2 --device cuda --batch_size 2 --dna_input dna_test.tsv --checkpoint_dir results_test
+
+echo ""
+echo "=== Test finished at $(date) ==="
+echo "Results in: results_test/"

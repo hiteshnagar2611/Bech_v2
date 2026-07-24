@@ -1,0 +1,30 @@
+#!/bin/bash
+#PBS -N ntv2_rerun
+#PBS -q apolloq
+#PBS -l select=1:host=gnode6:ncpus=10:ngpus=1
+#PBS -l walltime=4:00:00
+#PBS -joe
+#PBS -P external
+
+cd $PBS_O_WORKDIR
+mkdir -p results figures logs
+
+eval "$(conda shell.bash hook)"
+
+echo "=== Job started at $(date) ==="
+echo "Node: $(hostname)"
+nvidia-smi --query-gpu=index,name,memory.total,memory.used --format=csv
+
+conda activate dna_env
+
+echo ""
+echo "=== NT-v2 rerun (resuming from checkpoint) ==="
+python run_benchmark.py --model ntv2 --device cuda --batch_size 2
+
+echo ""
+echo "=== Re-run analysis ==="
+conda activate esm_meta
+python analysis.py
+
+echo ""
+echo "=== Job finished at $(date) ==="

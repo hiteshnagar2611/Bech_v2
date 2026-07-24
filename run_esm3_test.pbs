@@ -1,0 +1,23 @@
+#!/bin/bash
+#PBS -N esm3_test
+#PBS -q apolloq
+#PBS -l select=1:host=gnode6:ncpus=10:ngpus=1
+#PBS -l walltime=00:10:00
+#PBS -joe
+#PBS -P external
+
+cd $PBS_O_WORKDIR
+
+eval "$(conda shell.bash hook)"
+conda activate esm3_env
+
+echo "=== GPU check ==="
+nvidia-smi --query-gpu=index,name --format=csv
+
+echo ""
+echo "=== Torch CUDA check ==="
+python -c "import torch; print('torch:', torch.__version__, 'cuda:', torch.cuda.is_available(), 'device:', torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'N/A')"
+
+echo ""
+echo "=== ESM3 test ==="
+python test_esm3.py

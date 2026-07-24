@@ -1,0 +1,54 @@
+#!/bin/bash
+#PBS -N esm_benchmark
+#PBS -q apolloq
+#PBS -l select=1:host=gnode6:ncpus=10:ngpus=1
+#PBS -l walltime=720:00:00
+#PBS -joe
+#PBS -P external
+
+cd $PBS_O_WORKDIR
+mkdir -p results figures logs
+
+eval "$(conda shell.bash hook)"
+
+echo "=== Job started at $(date) ==="
+echo "Node: $(hostname)"
+echo "GPUs:"
+nvidia-smi --query-gpu=index,name,memory.total,memory.used --format=csv
+
+echo ""
+echo "=== Setting up environments ==="
+bash setup_envs.sh
+
+echo ""
+echo "=== Data preparation ==="
+conda activate esm_meta
+python data_prep.py
+
+echo ""
+echo "=== ESM1b benchmark ==="
+python run_benchmark.py --model esm1b --device cuda --batch_size 32
+
+echo ""
+echo "=== ESM2 benchmark ==="
+python run_benchmark.py --model esm2 --device cuda --batch_size 32
+
+echo ""
+echo "=== ESM3 benchmark ==="
+conda activate esm3_env
+python run_benchmark.py --model esm3 --device cuda --batch_size 8
+
+echo ""
+echo "=== ProtT5 benchmark ==="
+conda activate prott5_env
+python run_benchmark.py --model prott5 --device cuda --batch_size 16
+
+echo ""
+echo "=== Analysis ==="
+conda activate esm_meta
+python analysis.py
+
+echo ""
+echo "=== Job finished at $(date) ==="
+echo "Results in: results/"
+echo "Figures in: figures/"

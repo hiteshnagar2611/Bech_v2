@@ -1,0 +1,44 @@
+#!/bin/bash
+#PBS -N dna_benchmark
+#PBS -q apolloq
+#PBS -l select=1:host=gnode6:ncpus=10:ngpus=1
+#PBS -l walltime=720:00:00
+#PBS -joe
+#PBS -P external
+
+cd $PBS_O_WORKDIR
+mkdir -p results figures logs
+
+eval "$(conda shell.bash hook)"
+
+echo "=== Job started at $(date) ==="
+echo "Node: $(hostname)"
+nvidia-smi --query-gpu=index,name,memory.total,memory.used --format=csv
+
+conda activate dna_env
+
+echo ""
+echo "=== Preparing DNA variant data ==="
+python prepare_dna_data.py
+
+echo ""
+echo "=== DNABERT-2 benchmark ==="
+python run_benchmark.py --model dnabert2 --device cuda --batch_size 8
+
+echo ""
+echo "=== HyenaDNA benchmark ==="
+python run_benchmark.py --model hyenadna --device cuda --batch_size 4
+
+echo ""
+echo "=== NT-v2 benchmark ==="
+python run_benchmark.py --model ntv2 --device cuda --batch_size 4
+
+echo ""
+echo "=== Re-run analysis ==="
+conda activate esm_meta
+python analysis.py
+
+echo ""
+echo "=== Job finished at $(date) ==="
+echo "Results in: results/"
+echo "Figures in: figures/"
