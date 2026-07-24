@@ -1,0 +1,9 @@
+Model,Type,Architecture,Parameters,Embedding Layer,Embed Dim,Max Input,Tokenization,Method,AUROC
+ESM1b,Protein,Transformer Encoder (33 layers),650M,Layer 15 (of 33),1280,1024 tokens (~1024 aa),Amino acid (1 token = 1 residue),Cosine distance,0.5865179275219643
+ESM2,Protein,Transformer Encoder (36 layers),3B,Layer 15 (of 36),2560,1024 tokens (~1024 aa),Amino acid (1 token = 1 residue),Cosine distance,0.5301874466467971
+ESM3,Protein,Transformer Encoder (multimodal),1.4B,Final embeddings (all tokens),1536,2048 tokens,Amino acid (1 token = 1 residue),Cosine distance,0.7593864987781622
+ProtT5,Protein,T5 Encoder (24 layers),3B,Last hidden state,1024,1024 tokens (~1024 aa),"Spaced AA (""M K T A Y..."")",Cosine distance,0.5287511389534483
+ESM1b-MLM,Protein,Transformer Encoder (33 layers),650M,MLM logits (softmax layer),33 (vocab logits),1024 tokens (~1024 aa),Amino acid (1 token = 1 residue),Masked marginal log-likelihood,0.8889418896929224
+DNABERT-2,Nucleotide,BERT Encoder,117M,Last hidden state (all tokens),768,512 BPE tokens (~2000 bp),BPE (variable-length subwords),Cosine distance,0.49137879424349823
+HyenaDNA,Nucleotide,Hyena Hierarchy (long-range),~1B,Last hidden state (all tokens),1024,1M bp (single-nucleotide),Single nucleotide (1 token = 1 bp),Cosine distance,0.48087723558189077
+NT-v2,Nucleotide,Transformer Encoder (ESM-based),500M,Last hidden state (all tokens),1280,"2048 tokens (~12,288 bp)",6-mer (1 token = 6 bp),Cosine distance,0.5136556496473532

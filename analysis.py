@@ -20,6 +20,97 @@ MODEL_FILES = {
     'NT-v2': 'results/ntv2_results.tsv',
 }
 
+MODEL_INFO = {
+    'ESM1b': {
+        'model_id': 'esm1b_t33_650M_UR50S',
+        'type': 'Protein',
+        'architecture': 'Transformer Encoder (33 layers)',
+        'parameters': '650M',
+        'embed_layer': 'Layer 15 (of 33)',
+        'embedding_dim': 1280,
+        'max_input_length': '1024 tokens (~1024 aa)',
+        'tokenization': 'Amino acid (1 token = 1 residue)',
+        'method': 'Cosine distance',
+    },
+    'ESM2': {
+        'model_id': 'esm2_t36_3B_UR50S',
+        'type': 'Protein',
+        'architecture': 'Transformer Encoder (36 layers)',
+        'parameters': '3B',
+        'embed_layer': 'Layer 15 (of 36)',
+        'embedding_dim': 2560,
+        'max_input_length': '1024 tokens (~1024 aa)',
+        'tokenization': 'Amino acid (1 token = 1 residue)',
+        'method': 'Cosine distance',
+    },
+    'ESM3': {
+        'model_id': 'esm3-open',
+        'type': 'Protein',
+        'architecture': 'Transformer Encoder (multimodal)',
+        'parameters': '1.4B',
+        'embed_layer': 'Final embeddings (all tokens)',
+        'embedding_dim': 1536,
+        'max_input_length': '2048 tokens',
+        'tokenization': 'Amino acid (1 token = 1 residue)',
+        'method': 'Cosine distance',
+    },
+    'ProtT5': {
+        'model_id': 'prot_t5_xl_half_uniref50-enc',
+        'type': 'Protein',
+        'architecture': 'T5 Encoder (24 layers)',
+        'parameters': '3B',
+        'embed_layer': 'Last hidden state',
+        'embedding_dim': 1024,
+        'max_input_length': '1024 tokens (~1024 aa)',
+        'tokenization': 'Spaced AA ("M K T A Y...")',
+        'method': 'Cosine distance',
+    },
+    'ESM1b-MLM': {
+        'model_id': 'esm1b_t33_650M_UR50S',
+        'type': 'Protein',
+        'architecture': 'Transformer Encoder (33 layers)',
+        'parameters': '650M',
+        'embed_layer': 'MLM logits (softmax layer)',
+        'embedding_dim': '33 (vocab logits)',
+        'max_input_length': '1024 tokens (~1024 aa)',
+        'tokenization': 'Amino acid (1 token = 1 residue)',
+        'method': 'Masked marginal log-likelihood',
+    },
+    'DNABERT-2': {
+        'model_id': 'DNABERT-2-117M',
+        'type': 'Nucleotide',
+        'architecture': 'BERT Encoder',
+        'parameters': '117M',
+        'embed_layer': 'Last hidden state (all tokens)',
+        'embedding_dim': 768,
+        'max_input_length': '512 BPE tokens (~2000 bp)',
+        'tokenization': 'BPE (variable-length subwords)',
+        'method': 'Cosine distance',
+    },
+    'HyenaDNA': {
+        'model_id': 'hyenadna-large-1m-seqlen-hf',
+        'type': 'Nucleotide',
+        'architecture': 'Hyena Hierarchy (long-range)',
+        'parameters': '~1B',
+        'embed_layer': 'Last hidden state (all tokens)',
+        'embedding_dim': 1024,
+        'max_input_length': '1M bp (single-nucleotide)',
+        'tokenization': 'Single nucleotide (1 token = 1 bp)',
+        'method': 'Cosine distance',
+    },
+    'NT-v2': {
+        'model_id': 'nucleotide-transformer-v2-500m-multi-species',
+        'type': 'Nucleotide',
+        'architecture': 'Transformer Encoder (ESM-based)',
+        'parameters': '500M',
+        'embed_layer': 'Last hidden state (all tokens)',
+        'embedding_dim': 1280,
+        'max_input_length': '2048 tokens (~12,288 bp)',
+        'tokenization': '6-mer (1 token = 6 bp)',
+        'method': 'Cosine distance',
+    },
+}
+
 COLORS = {
     'ESM1b': '#1f77b4',
     'ESM2': '#ff7f0e',
@@ -195,6 +286,77 @@ def plot_roc_curves(all_dfs, output_dir):
     plt.close()
 
 
+def plot_model_info(all_metrics, output_dir):
+    rows = []
+    for model_name in all_metrics:
+        if model_name in MODEL_INFO:
+            info = MODEL_INFO[model_name]
+            rows.append({
+                'Model': model_name,
+                'Type': info['type'],
+                'Architecture': info['architecture'],
+                'Parameters': info['parameters'],
+                'Embedding Layer': info['embed_layer'],
+                'Embed Dim': info['embedding_dim'],
+                'Max Input': info['max_input_length'],
+                'Tokenization': info['tokenization'],
+                'Method': info['method'],
+                'AUROC': all_metrics[model_name]['AUROC'],
+            })
+
+    if not rows:
+        return
+
+    info_df = pd.DataFrame(rows)
+    info_df.to_csv(os.path.join(output_dir, 'model_info.csv'), index=False)
+    print(f"Model info: {os.path.join(output_dir, 'model_info.csv')}")
+
+    fig, ax = plt.subplots(figsize=(14, 4.5))
+    ax.axis('off')
+
+    table_data = info_df[['Model', 'Type', 'Parameters', 'Embedding Layer',
+                          'Max Input', 'Tokenization', 'Method', 'AUROC']].copy()
+    table_data['AUROC'] = table_data['AUROC'].apply(lambda x: f'{x:.3f}')
+
+    table = ax.table(
+        cellText=table_data.values,
+        colLabels=table_data.columns,
+        cellLoc='center',
+        loc='center',
+    )
+
+    table.auto_set_font_size(False)
+    table.set_fontsize(8)
+    table.scale(1.0, 1.6)
+
+    header_color = '#2c3e50'
+    header_text_color = 'white'
+    for j in range(len(table_data.columns)):
+        cell = table[0, j]
+        cell.set_facecolor(header_color)
+        cell.set_text_props(color=header_text_color, fontweight='bold')
+
+    for i in range(len(table_data)):
+        row_color = '#f8f9fa' if i % 2 == 0 else '#ffffff'
+        for j in range(len(table_data.columns)):
+            cell = table[i + 1, j]
+            cell.set_facecolor(row_color)
+            if j == 0:
+                cell.set_text_props(fontweight='bold')
+
+    auroc_col = list(table_data.columns).index('AUROC')
+    aurocs = info_df['AUROC'].values
+    best_idx = np.argmax(aurocs)
+    table[best_idx + 1, auroc_col].set_facecolor('#d4edda')
+    table[best_idx + 1, auroc_col].set_text_props(fontweight='bold', color='#155724')
+
+    ax.set_title('Model Architecture, Parameters, and Embedding Details',
+                 fontsize=13, fontweight='bold', pad=20)
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_dir, 'model_info.png'), dpi=300, bbox_inches='tight')
+    plt.close()
+
+
 def per_gene_analysis(all_dfs, output_dir, top_n=10):
     summary_frames = []
     for model_name, df in all_dfs.items():
@@ -267,6 +429,7 @@ def main():
     plot_pr_curves(all_dfs, output_dir)
     plot_boxplot(all_dfs, output_dir)
     per_gene_analysis(all_dfs, output_dir)
+    plot_model_info(all_metrics, output_dir)
 
     print(f"\nAll plots saved to {output_dir}/")
     print("Files:")
