@@ -8,6 +8,7 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import seaborn as sns
+from collections import Counter
 
 MODEL_FILES = {
     'ESM1b': 'results/esm1b_results.tsv',
@@ -357,6 +358,139 @@ def plot_model_info(all_metrics, output_dir):
     plt.close()
 
 
+def plot_data_analysis(output_dir):
+    df = pd.read_csv('missense_variants.tsv', sep='\t')
+    print(f"\n=== Dataset Analysis ===")
+    print(f"Total variants: {len(df)}")
+    print(f"Unique proteins: {df['refseq_accession'].nunique()}")
+    print(f"Unique genes: {df['gene_symbol'].nunique()}")
+
+    aa_order = list('ACDEFGHIKLMNPQRSTVWY')
+    aa_names = {
+        'A': 'Ala', 'C': 'Cys', 'D': 'Asp', 'E': 'Glu', 'F': 'Phe',
+        'G': 'Gly', 'H': 'His', 'I': 'Ile', 'K': 'Lys', 'L': 'Leu',
+        'M': 'Met', 'N': 'Asn', 'P': 'Pro', 'Q': 'Gln', 'R': 'Arg',
+        'S': 'Ser', 'T': 'Thr', 'V': 'Val', 'W': 'Trp', 'Y': 'Tyr',
+    }
+
+    fig = plt.figure(figsize=(20, 16))
+
+    ax1 = fig.add_subplot(2, 3, 1)
+    counts = df['clinical_significance'].value_counts()
+    colors_pie = ['#dc3545', '#28a745']
+    wedges, texts, autotexts = ax1.pie(
+        counts.values, labels=counts.index, autopct='%1.1f%%',
+        colors=colors_pie, startangle=90, textprops={'fontsize': 11}
+    )
+    for t in autotexts:
+        t.set_fontweight('bold')
+    ax1.set_title(f'Class Distribution\n(n={len(df):,})', fontsize=13, fontweight='bold')
+
+    ax2 = fig.add_subplot(2, 3, 2)
+    gene_counts = df.groupby('gene_symbol').size().sort_values(ascending=False)
+    top_n = 20
+    top_genes = gene_counts.head(top_n)
+    bars = ax2.barh(range(top_n), top_genes.values[::-1], color='#3498db', edgecolor='white')
+    ax2.set_yticks(range(top_n))
+    ax2.set_yticklabels(top_genes.index[::-1], fontsize=9)
+    ax2.set_xlabel('Number of Variants', fontsize=11)
+    ax2.set_title(f'Top {top_n} Genes by Variant Count', fontsize=13, fontweight='bold')
+    for bar, val in zip(bars, top_genes.values[::-1]):
+        ax2.text(bar.get_width() + 0.5, bar.get_y() + bar.get_height()/2,
+                 str(val), va='center', fontsize=8)
+    sns.despine(ax=ax2)
+
+    ax3 = fig.add_subplot(2, 3, 3)
+    gene_counts_per = df.groupby('refseq_accession').size()
+    ax3.hist(gene_counts_per.values, bins=50, color='#9b59b6', edgecolor='white', alpha=0.8)
+    ax3.set_xlabel('Variants per Protein', fontsize=11)
+    ax3.set_ylabel('Number of Proteins', fontsize=11)
+    ax3.set_title(f'Variant Count per Protein\n(median={np.median(gene_counts_per.values):.0f}, '
+                  f'max={gene_counts_per.max()})', fontsize=13, fontweight='bold')
+    ax3.axvline(x=np.median(gene_counts_per.values), color='red', linestyle='--', alpha=0.7, label='Median')
+    ax3.legend()
+    sns.despine(ax=ax3)
+
+    ax4 = fig.add_subplot(2, 3, 4)
+    sub_matrix = pd.DataFrame(0, index=aa_order, columns=aa_order)
+    for _, row in df.iterrows():
+        w, m = row['wt_aa'], row['mut_aa']
+        if w in aa_order and m in aa_order:
+            sub_matrix.loc[w, m] += 1
+    np.fill_diagonal(sub_matrix.values, 0)
+    sns.heatmap(sub_matrix, cmap='YlOrRd', ax=ax4, cbar_kws={'label': 'Count'},
+                xticklabels=[aa_names.get(a, a) for a in aa_order],
+                yticklabels=[aa_names.get(a, a) for a in aa_order],
+                linewidths=0.5, linecolor='white')
+    ax4.set_xlabel('Mutant', fontsize=11)
+    ax4.set_ylabel('Wild-type', fontsize=11)
+    ax4.set_title('Amino Acid Substitution Matrix', fontsize=13, fontweight='bold')
+    plt.sca(ax4)
+    plt.xticks(rotation=45, ha='right', fontsize=8)
+    plt.yticks(rotation=0, fontsize=8)
+
+    ax5 = fig.add_subplot(2, 3, 5)
+    hydrophobic = set('AILMFWV')
+    positive = set('RHK')
+    negative = set('DE')
+    polar = set('STNQ')
+    special = set('CGP')
+    aromatic = set('FWY')
+
+    def classify_change(w, m):
+        if w in hydrophobic and m in hydrophobic:
+            return 'Hydrophobic'
+        elif w in positive and m in positive:
+            return 'Positive'
+        elif w in negative and m in negative:
+            return 'Negative'
+        elif w in polar and m in polar:
+            return 'Polar'
+        elif w in aromatic and m in aromatic:
+            return 'Aromatic'
+        else:
+            return 'Cross-property'
+
+    df['change_type'] = df.apply(lambda r: classify_change(r['wt_aa'], r['mut_aa']), axis=1)
+    change_counts = df.groupby(['change_type', 'clinical_significance']).size().unstack(fill_value=0)
+    change_order = ['Hydrophobic', 'Polar', 'Positive', 'Negative', 'Aromatic', 'Cross-property']
+    change_counts = change_counts.reindex([c for c in change_order if c in change_counts.index])
+    change_counts.plot(kind='bar', ax=ax5, color=['#dc3545', '#28a745'], edgecolor='white')
+    ax5.set_ylabel('Count', fontsize=11)
+    ax5.set_title('Mutation Type by Significance', fontsize=13, fontweight='bold')
+    ax5.set_xticklabels(ax5.get_xticklabels(), rotation=30, ha='right', fontsize=8)
+    ax5.legend(fontsize=9)
+    sns.despine(ax=ax5)
+
+    ax6 = fig.add_subplot(2, 3, 6)
+    wt_counts = df['wt_aa'].value_counts().reindex(aa_order).fillna(0)
+    mut_counts = df['mut_aa'].value_counts().reindex(aa_order).fillna(0)
+    x = np.arange(len(aa_order))
+    width = 0.35
+    ax6.bar(x - width/2, wt_counts.values, width, label='Wild-type', color='#3498db', alpha=0.8)
+    ax6.bar(x + width/2, mut_counts.values, width, label='Mutant', color='#e74c3c', alpha=0.8)
+    ax6.set_xticks(x)
+    ax6.set_xticklabels([aa_names.get(a, a) for a in aa_order], rotation=45, ha='right', fontsize=8)
+    ax6.set_ylabel('Count', fontsize=11)
+    ax6.set_title('Amino Acid Frequency\n(WT vs Mutant)', fontsize=13, fontweight='bold')
+    ax6.legend()
+    sns.despine(ax=ax6)
+
+    plt.suptitle('ClinVar Missense Variant Dataset Analysis', fontsize=15, fontweight='bold', y=1.01)
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_dir, 'dataset_analysis.png'), dpi=300, bbox_inches='tight')
+    plt.close()
+
+    print(f"  Pathogenic: {(df['clinical_significance']=='Pathogenic').sum()}")
+    print(f"  Benign: {(df['clinical_significance']=='Benign').sum()}")
+    print(f"  Top 10 genes:")
+    for g, c in gene_counts.head(10).items():
+        print(f"    {g}: {c}")
+    print(f"  Dataset analysis: {os.path.join(output_dir, 'dataset_analysis.png')}")
+
+    df.drop(columns=['change_type'], inplace=True)
+
+
 def per_gene_analysis(all_dfs, output_dir, top_n=10):
     summary_frames = []
     for model_name, df in all_dfs.items():
@@ -430,6 +564,7 @@ def main():
     plot_boxplot(all_dfs, output_dir)
     per_gene_analysis(all_dfs, output_dir)
     plot_model_info(all_metrics, output_dir)
+    plot_data_analysis(output_dir)
 
     print(f"\nAll plots saved to {output_dir}/")
     print("Files:")
