@@ -984,7 +984,7 @@ def run_protbert(variants, device='cuda', checkpoint_dir='results', batch_size_o
                 wt_tensor = torch.stack(wt_vecs)
                 mut_tensor = torch.stack(mut_vecs)
                 cos_sim = F.cosine_similarity(F.normalize(wt_tensor, dim=1), F.normalize(mut_tensor, dim=1))
-                distances = (1.0 - cos_sim).numpy()
+                distances = (cos_sim - 1.0).numpy()
                 for v, d in zip(valid, distances):
                     results.append({
                         'rcv_accession': v['rcv_accession'],

@@ -7,7 +7,7 @@ ESM1b-MLM,Protein,Transformer Encoder (33 layers),650M,MLM logits (softmax layer
 DNABERT-2,Nucleotide,BERT Encoder,117M,Last hidden state (all tokens),768,512 BPE tokens (~2000 bp),BPE (variable-length subwords),Cosine distance,0.49137879424349823
 HyenaDNA,Nucleotide,Hyena Hierarchy (long-range),~1B,Last hidden state (all tokens),1024,1M bp (single-nucleotide),Single nucleotide (1 token = 1 bp),Cosine distance,0.48087723558189077
 NT-v2,Nucleotide,Transformer Encoder (ESM-based),500M,Last hidden state (all tokens),1280,"2048 tokens (~12,288 bp)",6-mer (1 token = 6 bp),Cosine distance,0.5136556496473532
-ProtBERT,Protein,BERT Encoder (30 layers),345M,Last hidden state,1024,2048 tokens (~2048 aa),Character-level AA (space-separated),Cosine distance,0.2473103149149901
+ProtBERT,Protein,BERT Encoder (30 layers),345M,Last hidden state,1024,2048 tokens (~2048 aa),Character-level AA (space-separated),Cosine distance,0.7526897555648024
 ESM-1v,Protein,Transformer Encoder (33 layers),650M,Layer 33 (of 33),1280,1024 tokens (~1022 aa),Amino acid (1 token = 1 residue),Cosine distance,0.5222373260417759
 Ankh,Protein,T5 Encoder-Decoder (48 layers),1.5B,Encoder last hidden state,1536,512 tokens,SentencePiece (vocab=144),Cosine distance,0.5180224470155241
 DNABERT-1,Nucleotide,BERT Encoder (12 layers),110M,Last hidden state (all tokens),768,512 tokens (~3072 bp),6-mer k-mer (1 token = 6 bp),Cosine distance,0.5005434369031243
