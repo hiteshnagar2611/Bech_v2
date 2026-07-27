@@ -19,7 +19,14 @@ MODEL_FILES = {
     'DNABERT-2': 'results/dnabert2_results.tsv',
     'HyenaDNA': 'results/hyenadna_results.tsv',
     'NT-v2': 'results/ntv2_results.tsv',
+    'ProtBERT': 'results/protbert_results.tsv',
+    'ESM-1v': 'results/esm1v_results.tsv',
+    'Ankh': 'results/ankh_results.tsv',
+    'DNABERT-1': 'results/dnabert1_results.tsv',
+    'Gena-LM': 'results/genalm_results.tsv',
 }
+
+# Caduceus removed — mamba_ssm compilation failed
 
 MODEL_INFO = {
     'ESM1b': {
@@ -110,7 +117,63 @@ MODEL_INFO = {
         'tokenization': '6-mer (1 token = 6 bp)',
         'method': 'Cosine distance',
     },
+    'ProtBERT': {
+        'model_id': 'prot_bert_bfd',
+        'type': 'Protein',
+        'architecture': 'BERT Encoder (30 layers)',
+        'parameters': '345M',
+        'embed_layer': 'Last hidden state',
+        'embedding_dim': 1024,
+        'max_input_length': '2048 tokens (~2048 aa)',
+        'tokenization': 'Character-level AA (space-separated)',
+        'method': 'Cosine distance',
+    },
+    'ESM-1v': {
+        'model_id': 'esm1v_t33_650M_UR90S_1',
+        'type': 'Protein',
+        'architecture': 'Transformer Encoder (33 layers)',
+        'parameters': '650M',
+        'embed_layer': 'Layer 33 (of 33)',
+        'embedding_dim': 1280,
+        'max_input_length': '1024 tokens (~1022 aa)',
+        'tokenization': 'Amino acid (1 token = 1 residue)',
+        'method': 'Cosine distance',
+    },
+    'Ankh': {
+        'model_id': 'ankh-large',
+        'type': 'Protein',
+        'architecture': 'T5 Encoder-Decoder (48 layers)',
+        'parameters': '1.5B',
+        'embed_layer': 'Encoder last hidden state',
+        'embedding_dim': 1536,
+        'max_input_length': '512 tokens',
+        'tokenization': 'SentencePiece (vocab=144)',
+        'method': 'Cosine distance',
+    },
+    'DNABERT-1': {
+        'model_id': 'DNA_bert_6',
+        'type': 'Nucleotide',
+        'architecture': 'BERT Encoder (12 layers)',
+        'parameters': '110M',
+        'embed_layer': 'Last hidden state (all tokens)',
+        'embedding_dim': 768,
+        'max_input_length': '512 tokens (~3072 bp)',
+        'tokenization': '6-mer k-mer (1 token = 6 bp)',
+        'method': 'Cosine distance',
+    },
+    'Gena-LM': {
+        'model_id': 'gena-lm-bert-base',
+        'type': 'Nucleotide',
+        'architecture': 'BERT Encoder (Pre-LN, 12 layers)',
+        'parameters': '110M',
+        'embed_layer': 'Last hidden state (all tokens)',
+        'embedding_dim': 768,
+        'max_input_length': '512 tokens (~4500 bp)',
+        'tokenization': 'BPE (vocab=32k)',
+        'method': 'Cosine distance',
+    },
 }
+
 
 COLORS = {
     'ESM1b': '#1f77b4',
@@ -121,6 +184,11 @@ COLORS = {
     'DNABERT-2': '#e377c2',
     'HyenaDNA': '#8c564b',
     'NT-v2': '#7f7f7f',
+    'ProtBERT': '#17becf',
+    'ESM-1v': '#bcbd22',
+    'Ankh': '#e74c3c',
+    'DNABERT-1': '#3498db',
+    'Gena-LM': '#2ecc71',
 }
 
 

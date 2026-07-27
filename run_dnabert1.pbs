@@ -1,0 +1,17 @@
+#!/bin/bash
+#PBS -N dnabert1_run
+#PBS -q apolloq
+#PBS -l select=1:host=gnode6:ncpus=10:ngpus=1
+#PBS -l walltime=0:30:00
+#PBS -joe
+#PBS -P external
+
+cd $PBS_O_WORKDIR
+
+eval "$(conda shell.bash hook)"
+conda activate dna_env
+
+echo "=== DNABERT-1 run started at $(date) ==="
+python run_benchmark.py --model dnabert1 --device cuda --batch_size 8 2>&1 | tail -10
+echo "Results:" && wc -l results/dnabert1_results.tsv 2>/dev/null
+echo "=== Finished at $(date) ==="

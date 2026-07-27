@@ -77,8 +77,8 @@ draw_box(ax, 7, sec_y, 5, 0.5, 'MODEL LOADING & SETUP', '#2c3e50', fontsize=12, 
 arrow_down(ax, 7, 17.375, sec_y + 0.25)
 
 box_y = 15.95
-draw_box(ax, 3.8, box_y, 5.5, 0.55, 'PROTEIN MODELS\nESM1b (650M) | ESM2 (3B) | ESM3 (1.4B) | ProtT5 (3B)', '#8e44ad', fontsize=8, bold=True)
-draw_box(ax, 10.5, box_y, 5.5, 0.55, 'DNA MODELS\nDNABERT-2 (117M) | HyenaDNA (~1B) | NT-v2 (500M)', '#c0392b', fontsize=8, bold=True)
+draw_box(ax, 3.8, box_y, 5.5, 0.55, 'PROTEIN MODELS (8)\nESM1b | ESM2 | ESM3 | ProtT5 | ESM1b-MLM | ESM-1v | ProtBERT | Ankh', '#8e44ad', fontsize=7.5, bold=True)
+draw_box(ax, 10.5, box_y, 5.5, 0.55, 'DNA MODELS (5)\nDNABERT-2 | DNABERT-1 | HyenaDNA | NT-v2 | Gena-LM', '#c0392b', fontsize=7.5, bold=True)
 
 arrow_split(ax, 7, sec_y - 0.25, [3.8, 10.5], box_y + 0.275)
 
@@ -89,8 +89,8 @@ arrow_down(ax, 3.8, box_y - 0.275, sec_y + 0.25, '#8e44ad')
 arrow_down(ax, 10.5, box_y - 0.275, sec_y + 0.25, '#c0392b')
 
 box_y = 14.25
-draw_box(ax, 3.8, box_y, 5.5, 0.55, 'WT & Mut embeddings at variant pos\nLayer 15 (ESM1b/ESM2) | Final (ESM3/ProtT5)', '#2980b9', fontsize=8)
-draw_box(ax, 10.5, box_y, 5.5, 0.55, '~6002bp nucleotide context\nDNABERT-2 (BPE) | HyenaDNA (1bp) | NT-v2 (6-mer)', '#e74c3c', fontsize=8)
+draw_box(ax, 3.8, box_y, 5.5, 0.55, 'WT & Mut embeddings at variant pos\nLayer 15 (ESM1b/ESM2/ESM-1v) | Final (ESM3/ProtT5/ProtBERT/Ankh)', '#2980b9', fontsize=7.5)
+draw_box(ax, 10.5, box_y, 5.5, 0.55, '~6002bp nucleotide context\nDNABERT-1/2 (k-mer) | HyenaDNA (1bp) | NT-v2 (6-mer) | Gena-LM (BPE)', '#e74c3c', fontsize=7.5)
 
 # ===== SECTION 5: SCORING =====
 sec_y = 13.4
@@ -101,7 +101,7 @@ arrow_down(ax, 7, 13.95, sec_y + 0.25)
 arrow_merge(ax, 7, sec_y + 0.25, [3.8, 10.5], box_y - 0.275)
 
 box_y = 12.55
-draw_box(ax, 3.8, box_y, 5.5, 0.55, 'Cosine Distance\n1 - cos_sim(WT, Mut)  [7 models]', '#3498db', fontsize=8)
+draw_box(ax, 3.8, box_y, 5.5, 0.55, 'Cosine Distance\n1 - cos_sim(WT, Mut)  [12 models]', '#3498db', fontsize=8)
 draw_box(ax, 10.5, box_y, 5.5, 0.55, 'Masked Marginal Log-Likelihood\nP(wt) - P(mut)  [ESM1b-MLM]', '#9b59b6', fontsize=8)
 
 arrow_split(ax, 7, sec_y - 0.25, [3.8, 10.5], box_y + 0.275)
@@ -126,7 +126,7 @@ arrow_down(ax, 7, box_y - 0.275, sec_y + 0.25)
 
 box_y = 9.15
 draw_box(ax, 2.5, box_y, 3.8, 0.55, 'dataset_analysis.png\nClass dist | Gene counts\nAA substitution matrix', '#34495e', fontsize=7)
-draw_box(ax, 7.0, box_y, 3.5, 0.55, 'benchmark_summary.csv\n8 models × 12 metrics', '#34495e', fontsize=7)
+draw_box(ax, 7.0, box_y, 3.5, 0.55, 'benchmark_summary.csv\n13 models × 12 metrics', '#34495e', fontsize=7)
 draw_box(ax, 11.0, box_y, 4.0, 0.55, 'roc_curves | pr_curves\nauroc_comparison | distributions', '#34495e', fontsize=7)
 
 arrow_split(ax, 7, sec_y - 0.25, [2.5, 7.0, 11.0], box_y + 0.275)
@@ -146,20 +146,25 @@ results_lines = [
     ("ESM1b", "0.587", "#3498db"),
     ("ESM2", "0.530", "#3498db"),
     ("ProtT5", "0.529", "#3498db"),
+    ("ESM-1v", "0.522", "#3498db"),
+    ("Ankh", "0.518", "#3498db"),
     ("NT-v2", "0.514", "#e67e22"),
+    ("DNABERT-1", "0.501", "#e74c3c"),
     ("DNABERT-2", "0.491", "#e74c3c"),
+    ("Gena-LM", "0.497", "#e74c3c"),
     ("HyenaDNA", "0.481", "#e74c3c"),
+    ("ProtBERT", "0.247*", "#17becf"),
 ]
 
-x_start = 1.8
+x_start = 1.3
 for i, (name, auroc, color) in enumerate(results_lines):
-    x = x_start + i * 1.5
-    ax.add_patch(FancyBboxPatch((x - 0.55, 6.85), 1.1, 0.5, boxstyle='round,pad=0.03',
+    x = x_start + i * 0.95
+    ax.add_patch(FancyBboxPatch((x - 0.42, 6.85), 0.85, 0.5, boxstyle='round,pad=0.03',
                  facecolor=color, edgecolor='#555', linewidth=0.8, alpha=0.85, zorder=2))
-    ax.text(x, 7.05, f'{name}', ha='center', fontsize=7, fontweight='bold', color='white', zorder=3)
-    ax.text(x, 6.93, auroc, ha='center', fontsize=6.5, color='white', zorder=3)
+    ax.text(x, 7.05, f'{name}', ha='center', fontsize=6, fontweight='bold', color='white', zorder=3)
+    ax.text(x, 6.93, auroc, ha='center', fontsize=5.5, color='white', zorder=3)
 
-ax.text(7, 6.55, 'Best: ESM1b-MLM (Masked Marginal Log-Likelihood) — far outperforms all cosine distance methods',
+ax.text(7, 6.55, 'Best: ESM1b-MLM (0.889) — *ProtBERT AUROC inverted (0.753 when flipped)',
         ha='center', fontsize=9, color='#2c3e50', fontweight='bold')
 
 arrow_down(ax, 7, sec_y - 0.25, 7.6)

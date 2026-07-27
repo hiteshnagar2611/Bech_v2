@@ -1,0 +1,57 @@
+#!/bin/bash
+#PBS -N new_models_benchmark
+#PBS -q apolloq
+#PBS -l select=1:host=gnode6:ncpus=10:ngpus=1
+#PBS -l walltime=720:00:00
+#PBS -joe
+#PBS -P external
+
+cd $PBS_O_WORKDIR
+mkdir -p results figures logs
+
+eval "$(conda shell.bash hook)"
+
+echo "=== Job started at $(date) ==="
+echo "Node: $(hostname)"
+nvidia-smi --query-gpu=index,name,memory.total,memory.used --format=csv
+
+# --- Protein models (esm_meta) ---
+conda activate esm_meta
+
+echo ""
+echo "=== ProtBERT benchmark ==="
+python run_benchmark.py --model protbert --device cuda --batch_size 8
+
+echo ""
+echo "=== ESM-1v benchmark ==="
+python run_benchmark.py --model esm1v --device cuda --batch_size 8
+
+echo ""
+echo "=== Ankh benchmark ==="
+python run_benchmark.py --model ankh --device cuda --batch_size 4
+
+# --- DNA models (dna_env) ---
+conda activate dna_env
+
+echo ""
+echo "=== DNABERT-1 benchmark ==="
+python run_benchmark.py --model dnabert1 --device cuda --batch_size 4
+
+echo ""
+echo "=== Gena-LM benchmark ==="
+python run_benchmark.py --model genalm --device cuda --batch_size 4
+
+echo ""
+echo "=== Caduceus benchmark ==="
+python run_benchmark.py --model caduceus --device cuda --batch_size 4
+
+# --- Analysis ---
+conda activate esm_meta
+echo ""
+echo "=== Re-run analysis ==="
+python analysis.py
+
+echo ""
+echo "=== Job finished at $(date) ==="
+echo "Results in: results/"
+echo "Figures in: figures/"

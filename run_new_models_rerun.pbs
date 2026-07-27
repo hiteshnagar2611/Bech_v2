@@ -1,0 +1,30 @@
+#!/bin/bash
+#PBS -N new_models_rerun
+#PBS -q apolloq
+#PBS -l select=1:host=gnode6:ncpus=10:ngpus=1
+#PBS -l walltime=1:00:00
+#PBS -joe
+#PBS -P external
+
+cd $PBS_O_WORKDIR
+
+eval "$(conda shell.bash hook)"
+
+echo "=== Rerun started at $(date) ==="
+
+# Ankh resumes from checkpoint (1128 remaining)
+conda activate esm_meta
+echo ""
+echo "=== Ankh (resume from checkpoint) ==="
+python run_benchmark.py --model ankh --device cuda --batch_size 8 2>&1 | tail -5
+echo "Results:" && wc -l results/ankh_results.tsv 2>/dev/null
+
+# DNABERT-1 (fresh)
+conda activate dna_env
+echo ""
+echo "=== DNABERT-1 ==="
+python run_benchmark.py --model dnabert1 --device cuda --batch_size 8 2>&1 | tail -5
+echo "Results:" && wc -l results/dnabert1_results.tsv 2>/dev/null
+
+echo ""
+echo "=== Rerun finished at $(date) ==="

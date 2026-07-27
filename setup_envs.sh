@@ -6,7 +6,7 @@ TORCH_INDEX="https://download.pytorch.org/whl/cu124"
 echo "=== Setting up ESM Meta environment (ESM1b + ESM2) ==="
 conda run -n esm_meta pip uninstall torch -y 2>/dev/null || true
 conda run -n esm_meta pip install --index-url "$TORCH_INDEX" "torch>=2.1,<2.5"
-conda run -n esm_meta pip install fair-esm "numpy<2" pandas scikit-learn matplotlib seaborn tqdm
+conda run -n esm_meta pip install fair-esm transformers "numpy<2" pandas scikit-learn matplotlib seaborn tqdm
 echo "esm_meta done"
 
 echo "=== Setting up ESM3 environment ==="
