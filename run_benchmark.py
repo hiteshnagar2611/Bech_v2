@@ -190,6 +190,7 @@ def run_esm_mlm(model_name, variants, device='cuda', checkpoint_dir='results', b
     processed = len(results)
     start_time = time.time()
     save_interval = 500
+    bs = batch_size_override or 32
 
     for prot_idx, (protein_id, prot_variants) in enumerate(protein_groups.items()):
         remaining = [v for v in prot_variants if v['rcv_accession'] not in done_rcvs]
@@ -202,44 +203,40 @@ def run_esm_mlm(model_name, variants, device='cuda', checkpoint_dir='results', b
         wt_tokens = wt_tokens.to(device)
         seq_len = wt_tokens.shape[1]
 
+        valid_variants = []
         for v in remaining:
             pos = int(v['protein_position']) - 1
             tok_pos = pos + 1
-            wt_aa = v['wt_aa']
-            mut_aa = v['mut_aa']
+            if tok_pos < seq_len:
+                valid_variants.append((v, tok_pos))
 
-            if tok_pos >= seq_len:
-                continue
-
-            masked_tokens = wt_tokens.clone()
-            masked_tokens[0, tok_pos] = mask_idx
+        for batch_start in range(0, len(valid_variants), bs):
+            batch = valid_variants[batch_start:batch_start + bs]
+            n = len(batch)
+            batched_tokens = wt_tokens.expand(n, -1).clone()
+            for i, (v, tok_pos) in enumerate(batch):
+                batched_tokens[i, tok_pos] = mask_idx
 
             with torch.no_grad():
-                results_dict = model(masked_tokens, repr_layers=[], return_contacts=False)
-            logits = results_dict["logits"][0].cpu()
+                results_dict = model(batched_tokens, repr_layers=[], return_contacts=False)
+            logits = results_dict["logits"].cpu()
 
-            logits_at_pos = logits[tok_pos]
-            probs = F.softmax(logits_at_pos, dim=0)
+            for i, (v, tok_pos) in enumerate(batch):
+                probs = F.softmax(logits[i, tok_pos], dim=0)
+                wt_idx = alphabet.get_idx(v['wt_aa'])
+                mut_idx = alphabet.get_idx(v['mut_aa'])
+                score = float(probs[wt_idx]) - float(probs[mut_idx])
 
-            wt_idx = alphabet.get_idx(wt_aa)
-            mut_idx = alphabet.get_idx(mut_aa)
-
-            ll_wt = float(probs[wt_idx])
-            ll_mut = float(probs[mut_idx])
-
-            score = ll_wt - ll_mut
-
-            results.append({
-                'rcv_accession': v['rcv_accession'],
-                'gene_symbol': v['gene_symbol'],
-                'protein_position': v['protein_position'],
-                'wt_aa': v['wt_aa'],
-                'mut_aa': v['mut_aa'],
-                'cosine_distance': float(score),
-                'label': v['clinical_significance'],
-            })
-            processed += 1
-            done_rcvs.add(v['rcv_accession'])
+                results.append({
+                    'rcv_accession': v['rcv_accession'],
+                    'gene_symbol': v['gene_symbol'],
+                    'protein_position': v['protein_position'],
+                    'wt_aa': v['wt_aa'], 'mut_aa': v['mut_aa'],
+                    'cosine_distance': float(score),
+                    'label': v['clinical_significance'],
+                })
+                processed += 1
+                done_rcvs.add(v['rcv_accession'])
 
         if processed % save_interval < len(remaining) or prot_idx % 100 == 0:
             elapsed = time.time() - start_time
@@ -1653,12 +1650,1088 @@ def run_caduceus(variants, device='cuda', checkpoint_dir='results', batch_size_o
     return results_path
 
 
+def run_protbert_mlm(variants, device='cuda', checkpoint_dir='results', batch_size_override=None):
+    import torch.nn.functional as F
+    from transformers import AutoTokenizer, AutoModelForMaskedLM
+
+    model_name = "Rostlab/prot_bert_bfd"
+    print(f"Loading {model_name} for MLM...")
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    model = AutoModelForMaskedLM.from_pretrained(model_name)
+    model = model.to(device).eval()
+
+    for p in model.parameters():
+        p.requires_grad = False
+
+    mask_token_id = tokenizer.mask_token_id
+    bs = batch_size_override or 32
+
+    protein_groups = group_by_protein(variants)
+    checkpoint_path = os.path.join(checkpoint_dir, 'protbert_mlm_checkpoint.pkl')
+    results_path = os.path.join(checkpoint_dir, 'protbert_mlm_results.tsv')
+
+    done_rcvs = set()
+    results = []
+    if os.path.exists(checkpoint_path):
+        with open(checkpoint_path, 'rb') as f:
+            data = pickle.load(f)
+            results = data.get('results', [])
+            done_rcvs = set(r['rcv_accession'] for r in results)
+        print(f"Resuming from checkpoint: {len(results)} done")
+
+    total = len(variants)
+    processed = len(results)
+    start_time = time.time()
+    save_interval = 500
+
+    aa_tokens = {}
+    for aa in 'ACDEFGHIKLMNPQRSTVWY':
+        tid = tokenizer.convert_tokens_to_ids(aa)
+        if tid != tokenizer.unk_token_id:
+            aa_tokens[aa] = tid
+
+    for prot_idx, (protein_id, prot_variants) in enumerate(protein_groups.items()):
+        remaining = [v for v in prot_variants if v['rcv_accession'] not in done_rcvs]
+        if not remaining:
+            continue
+
+        wt_seq = remaining[0]['wt_seq']
+        spaced_wt = " ".join(wt_seq)
+        wt_encoded = tokenizer(spaced_wt, return_tensors="pt")
+        wt_input = wt_encoded.input_ids.to(device)
+        seq_len = wt_input.shape[1]
+
+        valid_variants = []
+        for v in remaining:
+            pos = int(v['protein_position']) - 1
+            tok_pos = pos + 1
+            if tok_pos < seq_len and v['wt_aa'] in aa_tokens and v['mut_aa'] in aa_tokens:
+                valid_variants.append((v, tok_pos))
+
+        for batch_start in range(0, len(valid_variants), bs):
+            batch = valid_variants[batch_start:batch_start + bs]
+            n = len(batch)
+            batched_input = wt_input.expand(n, -1).clone()
+            for i, (v, tok_pos) in enumerate(batch):
+                batched_input[i, tok_pos] = mask_token_id
+
+            with torch.no_grad():
+                logits = model(input_ids=batched_input).logits.cpu()
+
+            for i, (v, tok_pos) in enumerate(batch):
+                probs = F.softmax(logits[i, tok_pos], dim=0)
+                score = float(probs[aa_tokens[v['wt_aa']]]) - float(probs[aa_tokens[v['mut_aa']]])
+                results.append({
+                    'rcv_accession': v['rcv_accession'],
+                    'gene_symbol': v['gene_symbol'],
+                    'protein_position': v['protein_position'],
+                    'wt_aa': v['wt_aa'], 'mut_aa': v['mut_aa'],
+                    'cosine_distance': score,
+                    'label': v['clinical_significance'],
+                })
+                processed += 1
+                done_rcvs.add(v['rcv_accession'])
+
+        if processed % save_interval < len(remaining) or prot_idx % 100 == 0:
+            elapsed = time.time() - start_time
+            rate = processed / elapsed if elapsed > 0 else 0
+            eta = (total - processed) / rate if rate > 0 else 0
+            print(f"  [protbert_mlm] {processed}/{total} ({100*processed/total:.1f}%) "
+                  f"rate={rate:.1f}/s ETA={eta/60:.1f}min")
+            with open(checkpoint_path, 'wb') as f:
+                pickle.dump({'results': results}, f)
+
+    with open(checkpoint_path, 'wb') as f:
+        pickle.dump({'results': results}, f)
+
+    with open(results_path, 'w', newline='') as f:
+        writer = csv.DictWriter(f, fieldnames=[
+            'rcv_accession', 'gene_symbol', 'protein_position',
+            'wt_aa', 'mut_aa', 'cosine_distance', 'label'
+        ], delimiter='\t')
+        writer.writeheader()
+        writer.writerows(results)
+
+    elapsed = time.time() - start_time
+    print(f"  [protbert_mlm] Done: {len(results)} variants in {elapsed/60:.1f} min")
+    print(f"  Results: {results_path}")
+
+    del model
+    torch.cuda.empty_cache()
+    return results_path
+
+
+def run_prott5_mlm(variants, device='cuda', checkpoint_dir='results', batch_size_override=None):
+    import torch
+    import torch.nn.functional as F
+    from transformers import T5ForConditionalGeneration, T5Tokenizer
+
+    model_name = "Rostlab/prot_t5_xl_uniref50"
+    print(f"Loading {model_name} for pseudo-log-likelihood scoring (fp16)...")
+    tokenizer = T5Tokenizer.from_pretrained(model_name, do_lower_case=False)
+    model = T5ForConditionalGeneration.from_pretrained(model_name, torch_dtype=torch.float16)
+    model = model.to(device).eval()
+
+    for p in model.parameters():
+        p.requires_grad = False
+
+    bs = batch_size_override or 8
+
+    protein_groups = group_by_protein(variants)
+    checkpoint_path = os.path.join(checkpoint_dir, 'prott5_mlm_checkpoint.pkl')
+    results_path = os.path.join(checkpoint_dir, 'prott5_mlm_results.tsv')
+
+    done_rcvs = set()
+    results = []
+    if os.path.exists(checkpoint_path):
+        with open(checkpoint_path, 'rb') as f:
+            data = pickle.load(f)
+            results = data.get('results', [])
+            done_rcvs = set(r['rcv_accession'] for r in results)
+        print(f"Resuming from checkpoint: {len(results)} done")
+
+    total = len(variants)
+    processed = len(results)
+    start_time = time.time()
+    save_interval = 500
+
+    aa_tokens = {}
+    for aa in 'ACDEFGHIKLMNPQRSTVWY':
+        ids = tokenizer.encode(aa, add_special_tokens=False)
+        if ids and ids[0] != tokenizer.unk_token_id:
+            aa_tokens[aa] = ids[0]
+    print(f"  [prott5_mlm] aa_tokens found: {len(aa_tokens)}/20")
+    if len(aa_tokens) == 0:
+        print("  [prott5_mlm] ERROR: No AA token IDs found!")
+        with open(results_path, 'w', newline='') as f:
+            writer = csv.DictWriter(f, fieldnames=[
+                'rcv_accession', 'gene_symbol', 'protein_position',
+                'wt_aa', 'mut_aa', 'cosine_distance', 'label'
+            ], delimiter='\t')
+            writer.writeheader()
+        return results_path
+
+    for prot_idx, (protein_id, prot_variants) in enumerate(protein_groups.items()):
+        remaining = [v for v in prot_variants if v['rcv_accession'] not in done_rcvs]
+        if not remaining:
+            continue
+
+        wt_seq = remaining[0]['wt_seq']
+        spaced_wt = " ".join(wt_seq)
+        wt_encoded = tokenizer(spaced_wt, return_tensors="pt", truncation=True, max_length=1024)
+        wt_input = wt_encoded.input_ids.to(device)
+        seq_len = wt_input.shape[1]
+
+        valid_variants = []
+        for v in remaining:
+            pos = int(v['protein_position']) - 1
+            tok_pos = pos + 1
+            if tok_pos < seq_len and v['wt_aa'] in aa_tokens and v['mut_aa'] in aa_tokens:
+                valid_variants.append((v, tok_pos))
+
+        with torch.no_grad():
+            decoder_input_ids = wt_input[:, :-1].clone()
+            output = model(input_ids=wt_input, decoder_input_ids=decoder_input_ids)
+            logits_all = output.logits.cpu()
+
+        for batch_start in range(0, len(valid_variants), bs):
+            batch = valid_variants[batch_start:batch_start + bs]
+
+            for i, (v, tok_pos) in enumerate(batch):
+                dec_pos = tok_pos - 1
+                if dec_pos < 0 or dec_pos >= logits_all.shape[1]:
+                    continue
+                probs = F.softmax(logits_all[0, dec_pos].float(), dim=0)
+                wt_tid = aa_tokens[v['wt_aa']]
+                mut_tid = aa_tokens[v['mut_aa']]
+                score = float(probs[wt_tid]) - float(probs[mut_tid])
+                results.append({
+                    'rcv_accession': v['rcv_accession'],
+                    'gene_symbol': v['gene_symbol'],
+                    'protein_position': v['protein_position'],
+                    'wt_aa': v['wt_aa'], 'mut_aa': v['mut_aa'],
+                    'cosine_distance': score,
+                    'label': v['clinical_significance'],
+                })
+                processed += 1
+                done_rcvs.add(v['rcv_accession'])
+
+        if processed % save_interval < len(valid_variants) or prot_idx % 100 == 0:
+            elapsed = time.time() - start_time
+            rate = processed / elapsed if elapsed > 0 else 0
+            eta = (total - processed) / rate if rate > 0 else 0
+            print(f"  [prott5_mlm] {processed}/{total} ({100*processed/total:.1f}%) "
+                  f"rate={rate:.1f}/s ETA={eta/60:.1f}min")
+            with open(checkpoint_path, 'wb') as f:
+                pickle.dump({'results': results}, f)
+
+    with open(checkpoint_path, 'wb') as f:
+        pickle.dump({'results': results}, f)
+
+    with open(results_path, 'w', newline='') as f:
+        writer = csv.DictWriter(f, fieldnames=[
+            'rcv_accession', 'gene_symbol', 'protein_position',
+            'wt_aa', 'mut_aa', 'cosine_distance', 'label'
+        ], delimiter='\t')
+        writer.writeheader()
+        writer.writerows(results)
+
+    elapsed = time.time() - start_time
+    print(f"  [prott5_mlm] Done: {len(results)} variants in {elapsed/60:.1f} min")
+    print(f"  Results: {results_path}")
+
+
+def run_esm3_mlm(variants, device='cuda', checkpoint_dir='results', batch_size_override=None):
+    import torch.nn.functional as F
+
+    print("Loading ESM3-open for MLM...")
+    from esm.models.esm3 import ESM3
+    from esm.sdk.api import ESMProtein, ESMProteinTensor, LogitsConfig
+
+    model = ESM3.from_pretrained("esm3-open", device=torch.device("cpu"))
+    model = model.to(device)
+    model = model.eval()
+
+    for p in model.parameters():
+        p.requires_grad = False
+
+    mask_token_id = 32
+
+    aa_token_ids = {}
+    from esm.tokenization.sequence_tokenizer import EsmSequenceTokenizer
+    tokenizer = EsmSequenceTokenizer()
+    for aa in 'ACDEFGHIKLMNPQRSTVWY':
+        for i in range(64):
+            if tokenizer.decode(i) == aa:
+                aa_token_ids[aa] = i
+                break
+
+    protein_groups = group_by_protein(variants)
+    checkpoint_path = os.path.join(checkpoint_dir, 'esm3_mlm_checkpoint.pkl')
+    results_path = os.path.join(checkpoint_dir, 'esm3_mlm_results.tsv')
+
+    done_rcvs = set()
+    results = []
+    if os.path.exists(checkpoint_path):
+        with open(checkpoint_path, 'rb') as f:
+            data = pickle.load(f)
+            results = data.get('results', [])
+            done_rcvs = set(r['rcv_accession'] for r in results)
+        print(f"Resuming from checkpoint: {len(results)} done")
+
+    total = len(variants)
+    processed = len(results)
+    start_time = time.time()
+    save_interval = 200
+
+    for prot_idx, (protein_id, prot_variants) in enumerate(protein_groups.items()):
+        remaining = [v for v in prot_variants if v['rcv_accession'] not in done_rcvs]
+        if not remaining:
+            continue
+
+        wt_seq = remaining[0]['wt_seq']
+
+        valid_variants = []
+        for v in remaining:
+            pos = int(v['protein_position']) - 1
+            tok_pos = pos + 1
+            if v['wt_aa'] in aa_token_ids and v['mut_aa'] in aa_token_ids:
+                valid_variants.append((v, tok_pos))
+
+        for v, tok_pos in valid_variants:
+            protein = ESMProtein(sequence=wt_seq)
+            encoded = model.encode(protein)
+            seq_len = encoded.sequence.shape[0]
+            if tok_pos >= seq_len:
+                continue
+
+            masked_seq = encoded.sequence.clone()
+            masked_seq[tok_pos] = mask_token_id
+
+            masked_encoded = ESMProteinTensor(
+                sequence=masked_seq,
+                structure=encoded.structure,
+                secondary_structure=encoded.secondary_structure,
+                sasa=encoded.sasa,
+                function=encoded.function,
+                residue_annotations=encoded.residue_annotations,
+            )
+
+            with torch.no_grad():
+                logits_output = model.logits(masked_encoded, LogitsConfig(sequence=True))
+                seq_logits = logits_output.logits.sequence.cpu()
+
+            if seq_logits.dim() == 3:
+                probs = F.softmax(seq_logits[0, tok_pos], dim=0)
+            else:
+                probs = F.softmax(seq_logits[tok_pos], dim=0)
+            score = float(probs[aa_token_ids[v['wt_aa']]]) - float(probs[aa_token_ids[v['mut_aa']]])
+
+            results.append({
+                'rcv_accession': v['rcv_accession'],
+                'gene_symbol': v['gene_symbol'],
+                'protein_position': v['protein_position'],
+                'wt_aa': v['wt_aa'], 'mut_aa': v['mut_aa'],
+                'cosine_distance': score,
+                'label': v['clinical_significance'],
+            })
+            processed += 1
+            done_rcvs.add(v['rcv_accession'])
+
+        if processed % save_interval < len(remaining) or prot_idx % 100 == 0:
+            elapsed = time.time() - start_time
+            rate = processed / elapsed if elapsed > 0 else 0
+            eta = (total - processed) / rate if rate > 0 else 0
+            print(f"  [esm3_mlm] {processed}/{total} ({100*processed/total:.1f}%) "
+                  f"rate={rate:.1f}/s ETA={eta/60:.1f}min")
+            with open(checkpoint_path, 'wb') as f:
+                pickle.dump({'results': results}, f)
+
+    with open(checkpoint_path, 'wb') as f:
+        pickle.dump({'results': results}, f)
+
+    with open(results_path, 'w', newline='') as f:
+        writer = csv.DictWriter(f, fieldnames=[
+            'rcv_accession', 'gene_symbol', 'protein_position',
+            'wt_aa', 'mut_aa', 'cosine_distance', 'label'
+        ], delimiter='\t')
+        writer.writeheader()
+        writer.writerows(results)
+
+    elapsed = time.time() - start_time
+    print(f"  [esm3_mlm] Done: {len(results)} variants in {elapsed/60:.1f} min")
+    print(f"  Results: {results_path}")
+
+    del model
+    torch.cuda.empty_cache()
+    return results_path
+
+
+def run_ankh_mlm(variants, device='cuda', checkpoint_dir='results', batch_size_override=None):
+    import torch.nn.functional as F
+    from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
+
+    model_name = "ElnaggarLab/ankh-large"
+    print(f"Loading {model_name} for pseudo-log-likelihood scoring...")
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
+    model = model.to(device).eval()
+
+    for p in model.parameters():
+        p.requires_grad = False
+
+    protein_groups = group_by_protein(variants)
+    checkpoint_path = os.path.join(checkpoint_dir, 'ankh_mlm_checkpoint.pkl')
+    results_path = os.path.join(checkpoint_dir, 'ankh_mlm_results.tsv')
+
+    done_rcvs = set()
+    results = []
+    if os.path.exists(checkpoint_path):
+        with open(checkpoint_path, 'rb') as f:
+            data = pickle.load(f)
+            results = data.get('results', [])
+            done_rcvs = set(r['rcv_accession'] for r in results)
+        print(f"Resuming from checkpoint: {len(results)} done")
+
+    total = len(variants)
+    processed = len(results)
+    start_time = time.time()
+    save_interval = 500
+
+    aa_tokens = {}
+    for aa in 'ACDEFGHIKLMNPQRSTVWY':
+        tid = tokenizer.convert_tokens_to_ids(aa)
+        if tid != tokenizer.unk_token_id:
+            aa_tokens[aa] = tid
+    print(f"  [ankh_mlm] aa_tokens found: {len(aa_tokens)}/20")
+
+    for prot_idx, (protein_id, prot_variants) in enumerate(protein_groups.items()):
+        remaining = [v for v in prot_variants if v['rcv_accession'] not in done_rcvs]
+        if not remaining:
+            continue
+
+        wt_seq = remaining[0]['wt_seq']
+        spaced_wt = " ".join(wt_seq)
+        wt_encoded = tokenizer(spaced_wt, return_tensors="pt", truncation=True, max_length=512)
+        wt_input = wt_encoded.input_ids.to(device)
+        seq_len = wt_input.shape[1]
+
+        valid_variants = []
+        for v in remaining:
+            pos = int(v['protein_position']) - 1
+            tok_pos = pos + 1
+            if tok_pos < seq_len and v['wt_aa'] in aa_tokens and v['mut_aa'] in aa_tokens:
+                valid_variants.append((v, tok_pos))
+
+        with torch.no_grad():
+            decoder_input_ids = wt_input[:, :-1].clone()
+            output = model(input_ids=wt_input, decoder_input_ids=decoder_input_ids)
+            logits_all = output.logits.cpu()
+
+        for batch_start in range(0, len(valid_variants), 16):
+            batch = valid_variants[batch_start:batch_start + 16]
+
+            for i, (v, tok_pos) in enumerate(batch):
+                dec_pos = tok_pos - 1
+                if dec_pos < 0 or dec_pos >= logits_all.shape[1]:
+                    continue
+                probs = F.softmax(logits_all[0, dec_pos].float(), dim=0)
+                wt_tid = aa_tokens[v['wt_aa']]
+                mut_tid = aa_tokens[v['mut_aa']]
+                score = float(probs[wt_tid]) - float(probs[mut_tid])
+                results.append({
+                    'rcv_accession': v['rcv_accession'],
+                    'gene_symbol': v['gene_symbol'],
+                    'protein_position': v['protein_position'],
+                    'wt_aa': v['wt_aa'], 'mut_aa': v['mut_aa'],
+                    'cosine_distance': score,
+                    'label': v['clinical_significance'],
+                })
+                processed += 1
+                done_rcvs.add(v['rcv_accession'])
+
+        if processed % save_interval < len(valid_variants) or prot_idx % 100 == 0:
+            elapsed = time.time() - start_time
+            rate = processed / elapsed if elapsed > 0 else 0
+            eta = (total - processed) / rate if rate > 0 else 0
+            print(f"  [ankh_mlm] {processed}/{total} ({100*processed/total:.1f}%) "
+                  f"rate={rate:.1f}/s ETA={eta/60:.1f}min")
+            with open(checkpoint_path, 'wb') as f:
+                pickle.dump({'results': results}, f)
+
+    with open(checkpoint_path, 'wb') as f:
+        pickle.dump({'results': results}, f)
+
+    with open(results_path, 'w', newline='') as f:
+        writer = csv.DictWriter(f, fieldnames=[
+            'rcv_accession', 'gene_symbol', 'protein_position',
+            'wt_aa', 'mut_aa', 'cosine_distance', 'label'
+        ], delimiter='\t')
+        writer.writeheader()
+        writer.writerows(results)
+
+    elapsed = time.time() - start_time
+    print(f"  [ankh_mlm] Done: {len(results)} variants in {elapsed/60:.1f} min")
+    print(f"  Results: {results_path}")
+
+    del model
+    torch.cuda.empty_cache()
+    return results_path
+
+
+def run_ntv2_mlm(variants, device='cuda', checkpoint_dir='results', batch_size_override=None):
+    import torch.nn.functional as F
+    from transformers import AutoTokenizer, AutoModelForMaskedLM
+
+    model_id = "InstaDeepAI/nucleotide-transformer-v2-500m-multi-species"
+    print(f"Loading {model_id} for MLM...")
+    tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
+    model = AutoModelForMaskedLM.from_pretrained(model_id, trust_remote_code=True)
+    model = model.to(device).eval()
+
+    for p in model.parameters():
+        p.requires_grad = False
+
+    mask_token_id = tokenizer.mask_token_id
+    var_center = 3001
+    var_token_idx = var_center // 6 + 1
+    kmer_start = (var_token_idx - 1) * 6
+    bs = batch_size_override or 16
+
+    checkpoint_path = os.path.join(checkpoint_dir, 'ntv2_mlm_checkpoint.pkl')
+    results_path = os.path.join(checkpoint_dir, 'ntv2_mlm_results.tsv')
+
+    done_rcvs = set()
+    results = []
+    if os.path.exists(checkpoint_path):
+        with open(checkpoint_path, 'rb') as f:
+            data = pickle.load(f)
+            results = data.get('results', [])
+            done_rcvs = set(r['rcv_accession'] for r in results)
+        print(f"Resuming from checkpoint: {len(results)} done")
+
+    total = len(variants)
+    processed = len(results)
+    start_time = time.time()
+    save_interval = 200
+
+    remaining = [v for v in variants if v['rcv_accession'] not in done_rcvs]
+
+    for batch_start in range(0, len(remaining), bs):
+        batch = remaining[batch_start:batch_start + bs]
+        wt_seqs = [v['nuc_context_wt'] for v in batch]
+
+        wt_encoded = tokenizer(wt_seqs, return_tensors="pt", padding=True, truncation=True, max_length=2048)
+        wt_input = wt_encoded.input_ids.to(device)
+        wt_mask = wt_encoded.attention_mask.to(device)
+
+        batched_masked = wt_input.clone()
+        for i in range(len(batch)):
+            if var_token_idx < batched_masked.shape[1]:
+                batched_masked[i, var_token_idx] = mask_token_id
+
+        with torch.no_grad():
+            out = model(input_ids=batched_masked, attention_mask=wt_mask)
+            logits = out.logits.cpu()
+
+        for i, v in enumerate(batch):
+            if var_token_idx >= logits.shape[1]:
+                continue
+
+            probs = F.softmax(logits[i, var_token_idx], dim=0)
+
+            wt_kmer = v['nuc_context_wt'][kmer_start:kmer_start+6]
+            mut_kmer = v['nuc_context_mut'][kmer_start:kmer_start+6]
+
+            wt_kmer_id = tokenizer.convert_tokens_to_ids(wt_kmer)
+            mut_kmer_id = tokenizer.convert_tokens_to_ids(mut_kmer)
+
+            if wt_kmer_id == tokenizer.unk_token_id or mut_kmer_id == tokenizer.unk_token_id:
+                continue
+
+            score = float(probs[wt_kmer_id]) - float(probs[mut_kmer_id])
+
+            results.append({
+                'rcv_accession': v['rcv_accession'],
+                'gene_symbol': v['gene_symbol'],
+                'protein_position': v['protein_position'],
+                'wt_aa': v['wt_aa'], 'mut_aa': v['mut_aa'],
+                'cosine_distance': score,
+                'label': v['label'],
+            })
+            processed += 1
+
+        done_rcvs.update(v['rcv_accession'] for v in batch)
+
+        if processed % save_interval < bs:
+            elapsed = time.time() - start_time
+            rate = processed / elapsed if elapsed > 0 else 0
+            eta = (total - processed) / rate if rate > 0 else 0
+            print(f"  [ntv2_mlm] {processed}/{total} ({100*processed/total:.1f}%) "
+                  f"rate={rate:.1f}/s ETA={eta/60:.1f}min")
+            with open(checkpoint_path, 'wb') as f:
+                pickle.dump({'results': results}, f)
+
+    with open(checkpoint_path, 'wb') as f:
+        pickle.dump({'results': results}, f)
+
+    with open(results_path, 'w', newline='') as f:
+        writer = csv.DictWriter(f, fieldnames=[
+            'rcv_accession', 'gene_symbol', 'protein_position',
+            'wt_aa', 'mut_aa', 'cosine_distance', 'label'
+        ], delimiter='\t')
+        writer.writeheader()
+        writer.writerows(results)
+
+    elapsed = time.time() - start_time
+    print(f"  [ntv2_mlm] Done: {len(results)} variants in {elapsed/60:.1f} min")
+    print(f"  Results: {results_path}")
+
+    del model
+    torch.cuda.empty_cache()
+    return results_path
+
+
+def run_dnabert1_mlm(variants, device='cuda', checkpoint_dir='results', batch_size_override=None):
+    import torch.nn.functional as F
+    import sys
+    import importlib
+    from transformers import BertTokenizer, AutoConfig
+    from huggingface_hub import snapshot_download
+
+    model_id = "zhihan1996/DNA_bert_6"
+    print(f"Loading {model_id} for MLM...")
+
+    model_dir = snapshot_download(model_id)
+    init_path = os.path.join(model_dir, '__init__.py')
+    if not os.path.exists(init_path):
+        open(init_path, 'w').close()
+    parent = os.path.dirname(model_dir)
+    if parent not in sys.path:
+        sys.path.insert(0, parent)
+    pkg_name = os.path.basename(model_dir)
+    mod = importlib.import_module(f'{pkg_name}.dnabert_layer')
+    CustomBertModel = mod.BertForMaskedLM
+
+    tokenizer = BertTokenizer.from_pretrained(model_id, trust_remote_code=True)
+    config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
+    model = CustomBertModel.from_pretrained(model_id, config=config)
+    model = model.to(device).eval()
+
+    for p in model.parameters():
+        p.requires_grad = False
+
+    var_center = 3001
+    kmer = 6
+    var_kmer_idx = var_center // kmer
+    kmer_start = var_kmer_idx * kmer
+    max_tokens = 512
+    half_window = (max_tokens - 2) // 2
+    mask_token_id = tokenizer.mask_token_id
+    bs = batch_size_override or 32
+
+    def tokenize_with_window(seq):
+        all_kmers = [seq[i:i+kmer] for i in range(0, len(seq) - kmer + 1, kmer)]
+        total_kmers = len(all_kmers)
+        kmers_start = max(0, var_kmer_idx - half_window)
+        kmers_end = min(total_kmers, kmers_start + max_tokens - 2)
+        if kmers_end == total_kmers:
+            kmers_start = kmers_end - (max_tokens - 2)
+        windowed_kmers = all_kmers[kmers_start:kmers_end]
+        spaced = " ".join(windowed_kmers)
+        encoded = tokenizer(spaced, return_tensors="pt")
+        input_ids = encoded.input_ids
+        adj_var_idx = var_kmer_idx - kmers_start + 1
+        return input_ids, adj_var_idx
+
+    checkpoint_path = os.path.join(checkpoint_dir, 'dnabert1_mlm_checkpoint.pkl')
+    results_path = os.path.join(checkpoint_dir, 'dnabert1_mlm_results.tsv')
+
+    done_rcvs = set()
+    results = []
+    if os.path.exists(checkpoint_path):
+        with open(checkpoint_path, 'rb') as f:
+            data = pickle.load(f)
+            results = data.get('results', [])
+            done_rcvs = set(r['rcv_accession'] for r in results)
+        print(f"Resuming from checkpoint: {len(results)} done")
+
+    total = len(variants)
+    processed = len(results)
+    start_time = time.time()
+    save_interval = 200
+
+    remaining = [v for v in variants if v['rcv_accession'] not in done_rcvs]
+
+    for batch_start in range(0, len(remaining), bs):
+        batch = remaining[batch_start:batch_start + bs]
+
+        batch_input_ids = []
+        batch_var_idxs = []
+        batch_labels = []
+        for v in batch:
+            wt_seq = v['nuc_context_wt']
+            input_ids, adj_var_idx = tokenize_with_window(wt_seq)
+            if adj_var_idx < input_ids.shape[1]:
+                batch_input_ids.append(input_ids)
+                batch_var_idxs.append(adj_var_idx)
+                batch_labels.append(v)
+
+        if not batch_input_ids:
+            continue
+
+        max_len = max(t.shape[1] for t in batch_input_ids)
+        padded = torch.zeros(len(batch_input_ids), max_len, dtype=torch.long)
+        attn_mask = torch.zeros(len(batch_input_ids), max_len, dtype=torch.long)
+        tok_type = torch.zeros(len(batch_input_ids), max_len, dtype=torch.long)
+        for i, t in enumerate(batch_input_ids):
+            padded[i, :t.shape[1]] = t[0]
+            attn_mask[i, :t.shape[1]] = 1
+
+        masked = padded.to(device).clone()
+        attention = attn_mask.to(device)
+        token_type_ids = tok_type.to(device)
+        for i, var_idx in enumerate(batch_var_idxs):
+            if var_idx < masked.shape[1]:
+                masked[i, var_idx] = mask_token_id
+
+        with torch.no_grad():
+            out = model(input_ids=masked, attention_mask=attention, token_type_ids=token_type_ids)
+            logits = out.logits.cpu()
+
+        for i, v in enumerate(batch_labels):
+            var_idx = batch_var_idxs[i]
+            if var_idx >= logits.shape[1]:
+                continue
+
+            probs = F.softmax(logits[i, var_idx], dim=0)
+
+            wt_seq = v['nuc_context_wt']
+            wt_kmer = wt_seq[kmer_start:kmer_start+kmer]
+            mut_kmer = v['nuc_context_mut'][kmer_start:kmer_start+kmer]
+
+            wt_kmer_id = tokenizer.convert_tokens_to_ids(wt_kmer)
+            mut_kmer_id = tokenizer.convert_tokens_to_ids(mut_kmer)
+
+            if wt_kmer_id == tokenizer.unk_token_id or mut_kmer_id == tokenizer.unk_token_id:
+                continue
+
+            score = float(probs[wt_kmer_id]) - float(probs[mut_kmer_id])
+
+            results.append({
+                'rcv_accession': v['rcv_accession'],
+                'gene_symbol': v['gene_symbol'],
+                'protein_position': v['protein_position'],
+                'wt_aa': v['wt_aa'], 'mut_aa': v['mut_aa'],
+                'cosine_distance': score,
+                'label': v['label'],
+            })
+            processed += 1
+
+        done_rcvs.update(v['rcv_accession'] for v in batch)
+
+        if processed % save_interval < bs:
+            elapsed = time.time() - start_time
+            rate = processed / elapsed if elapsed > 0 else 0
+            eta = (total - processed) / rate if rate > 0 else 0
+            print(f"  [dnabert1_mlm] {processed}/{total} ({100*processed/total:.1f}%) "
+                  f"rate={rate:.1f}/s ETA={eta/60:.1f}min")
+            with open(checkpoint_path, 'wb') as f:
+                pickle.dump({'results': results}, f)
+
+    with open(checkpoint_path, 'wb') as f:
+        pickle.dump({'results': results}, f)
+
+    with open(results_path, 'w', newline='') as f:
+        writer = csv.DictWriter(f, fieldnames=[
+            'rcv_accession', 'gene_symbol', 'protein_position',
+            'wt_aa', 'mut_aa', 'cosine_distance', 'label'
+        ], delimiter='\t')
+        writer.writeheader()
+        writer.writerows(results)
+
+    elapsed = time.time() - start_time
+    print(f"  [dnabert1_mlm] Done: {len(results)} variants in {elapsed/60:.1f} min")
+    print(f"  Results: {results_path}")
+
+    del model
+    torch.cuda.empty_cache()
+    return results_path
+
+
+def run_dnabert2_mlm(variants, device='cuda', checkpoint_dir='results', batch_size_override=None):
+    import torch.nn.functional as F
+    import sys
+    import importlib
+    from transformers import PreTrainedTokenizerFast, AutoConfig
+    from huggingface_hub import snapshot_download
+
+    model_id = "zhihan1996/DNABERT-2-117M"
+    print(f"Loading {model_id} for MLM...")
+
+    model_dir = snapshot_download(model_id)
+    init_path = os.path.join(model_dir, '__init__.py')
+    if not os.path.exists(init_path):
+        open(init_path, 'w').close()
+    parent = os.path.dirname(model_dir)
+    if parent not in sys.path:
+        sys.path.insert(0, parent)
+    pkg_name = os.path.basename(model_dir)
+    mod = importlib.import_module(f'{pkg_name}.bert_layers')
+    mod.flash_attn_qkvpacked_func = None
+    BertForMaskedLM = mod.BertForMaskedLM
+
+    tokenizer = PreTrainedTokenizerFast.from_pretrained(model_id, trust_remote_code=True)
+    config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
+    model = BertForMaskedLM.from_pretrained(model_id, config=config)
+    model = model.to(device).eval()
+
+    for p in model.parameters():
+        p.requires_grad = False
+
+    max_tokens = 512
+    var_center_bp = 3001
+    mask_token_id = tokenizer.mask_token_id
+    bs = batch_size_override or 16
+
+    def tokenize_seq(seq):
+        encoded = tokenizer(seq, return_tensors="pt", truncation=False, return_offsets_mapping=True)
+        offsets = encoded.offset_mapping[0]
+        input_ids = encoded.input_ids
+        attention_mask = encoded.attention_mask
+        n_tokens = input_ids.shape[1]
+
+        var_token_idx = 0
+        for i, (start, end) in enumerate(offsets):
+            if start <= var_center_bp < end:
+                var_token_idx = i
+                break
+
+        if n_tokens > max_tokens:
+            half = max_tokens // 2
+            tok_start = max(0, var_token_idx - half)
+            tok_end = min(n_tokens, tok_start + max_tokens)
+            if tok_end == n_tokens:
+                tok_start = tok_end - max_tokens
+            input_ids = input_ids[:, tok_start:tok_end]
+            attention_mask = attention_mask[:, tok_start:tok_end]
+            var_token_idx = var_token_idx - tok_start
+
+        return input_ids, attention_mask, var_token_idx
+
+    checkpoint_path = os.path.join(checkpoint_dir, 'dnabert2_mlm_checkpoint.pkl')
+    results_path = os.path.join(checkpoint_dir, 'dnabert2_mlm_results.tsv')
+
+    done_rcvs = set()
+    results = []
+    if os.path.exists(checkpoint_path):
+        with open(checkpoint_path, 'rb') as f:
+            data = pickle.load(f)
+            results = data.get('results', [])
+            done_rcvs = set(r['rcv_accession'] for r in results)
+        print(f"Resuming from checkpoint: {len(results)} done")
+
+    total = len(variants)
+    processed = len(results)
+    start_time = time.time()
+    save_interval = 200
+
+    remaining = [v for v in variants if v['rcv_accession'] not in done_rcvs]
+
+    for batch_start in range(0, len(remaining), bs):
+        batch = remaining[batch_start:batch_start + bs]
+
+        batch_wt_ids = []
+        batch_wt_masks = []
+        batch_mut_ids = []
+        batch_mut_masks = []
+        batch_var_idxs = []
+        batch_wt_token_ids = []
+        batch_mut_token_ids = []
+        batch_labels = []
+        for v in batch:
+            wt_input, wt_mask, var_idx = tokenize_seq(v['nuc_context_wt'])
+            mut_input, mut_mask, mut_var_idx = tokenize_seq(v['nuc_context_mut'])
+            if var_idx < wt_input.shape[1] and mut_var_idx < mut_input.shape[1]:
+                batch_wt_ids.append(wt_input)
+                batch_wt_masks.append(wt_mask)
+                batch_mut_ids.append(mut_input)
+                batch_mut_masks.append(mut_mask)
+                batch_var_idxs.append(var_idx)
+                batch_wt_token_ids.append(wt_input[0, var_idx].item())
+                batch_mut_token_ids.append(mut_input[0, mut_var_idx].item())
+                batch_labels.append(v)
+
+        if not batch_wt_ids:
+            continue
+
+        max_len = max(t.shape[1] for t in batch_wt_ids)
+        padded = torch.zeros(len(batch_wt_ids), max_len, dtype=torch.long)
+        attn_mask = torch.zeros(len(batch_wt_ids), max_len, dtype=torch.long)
+        for i, (ids, mask) in enumerate(zip(batch_wt_ids, batch_wt_masks)):
+            padded[i, :ids.shape[1]] = ids[0]
+            attn_mask[i, :mask.shape[1]] = mask[0]
+
+        masked = padded.to(device).clone()
+        attention = attn_mask.to(device)
+        for i, var_idx in enumerate(batch_var_idxs):
+            if var_idx < masked.shape[1]:
+                masked[i, var_idx] = mask_token_id
+
+        with torch.no_grad():
+            out = model(input_ids=masked, attention_mask=attention)
+            logits = out.logits.cpu()
+
+        for i, v in enumerate(batch_labels):
+            var_idx = batch_var_idxs[i]
+            if var_idx >= logits.shape[1]:
+                continue
+
+            probs = F.softmax(logits[i, var_idx], dim=0)
+
+            wt_tok_id = batch_wt_token_ids[i]
+            mut_tok_id = batch_mut_token_ids[i]
+
+            score = float(probs[wt_tok_id]) - float(probs[mut_tok_id])
+
+            results.append({
+                'rcv_accession': v['rcv_accession'],
+                'gene_symbol': v['gene_symbol'],
+                'protein_position': v['protein_position'],
+                'wt_aa': v['wt_aa'], 'mut_aa': v['mut_aa'],
+                'cosine_distance': score,
+                'label': v['label'],
+            })
+            processed += 1
+
+        done_rcvs.update(v['rcv_accession'] for v in batch)
+
+        if processed % save_interval < bs:
+            elapsed = time.time() - start_time
+            rate = processed / elapsed if elapsed > 0 else 0
+            eta = (total - processed) / rate if rate > 0 else 0
+            print(f"  [dnabert2_mlm] {processed}/{total} ({100*processed/total:.1f}%) "
+                  f"rate={rate:.1f}/s ETA={eta/60:.1f}min")
+            with open(checkpoint_path, 'wb') as f:
+                pickle.dump({'results': results}, f)
+
+    with open(checkpoint_path, 'wb') as f:
+        pickle.dump({'results': results}, f)
+
+    with open(results_path, 'w', newline='') as f:
+        writer = csv.DictWriter(f, fieldnames=[
+            'rcv_accession', 'gene_symbol', 'protein_position',
+            'wt_aa', 'mut_aa', 'cosine_distance', 'label'
+        ], delimiter='\t')
+        writer.writeheader()
+        writer.writerows(results)
+
+    elapsed = time.time() - start_time
+    print(f"  [dnabert2_mlm] Done: {len(results)} variants in {elapsed/60:.1f} min")
+    print(f"  Results: {results_path}")
+
+    del model
+    torch.cuda.empty_cache()
+    return results_path
+
+
+def run_genalm_mlm(variants, device='cuda', checkpoint_dir='results', batch_size_override=None):
+    import torch.nn.functional as F
+    from transformers import AutoTokenizer, AutoModelForMaskedLM
+
+    model_id = "AIRI-Institute/gena-lm-bert-base"
+    print(f"Loading {model_id} for MLM...")
+    tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
+    model = AutoModelForMaskedLM.from_pretrained(model_id, trust_remote_code=True)
+    model = model.to(device).eval()
+
+    for p in model.parameters():
+        p.requires_grad = False
+
+    max_tokens = 512
+    var_center_bp = 3001
+    mask_token_id = tokenizer.mask_token_id
+    bs = batch_size_override or 16
+
+    def tokenize_seq(seq):
+        encoded = tokenizer(seq, return_tensors="pt", truncation=True, max_length=max_tokens,
+                            return_offsets_mapping=True)
+        offsets = encoded.offset_mapping[0]
+        input_ids = encoded.input_ids
+        attention_mask = encoded.attention_mask
+
+        var_token_idx = 0
+        for i, (start, end) in enumerate(offsets):
+            if start <= var_center_bp < end:
+                var_token_idx = i
+                break
+
+        return input_ids, attention_mask, var_token_idx
+
+    checkpoint_path = os.path.join(checkpoint_dir, 'genalm_mlm_checkpoint.pkl')
+    results_path = os.path.join(checkpoint_dir, 'genalm_mlm_results.tsv')
+
+    done_rcvs = set()
+    results = []
+    if os.path.exists(checkpoint_path):
+        with open(checkpoint_path, 'rb') as f:
+            data = pickle.load(f)
+            results = data.get('results', [])
+            done_rcvs = set(r['rcv_accession'] for r in results)
+        print(f"Resuming from checkpoint: {len(results)} done")
+
+    total = len(variants)
+    processed = len(results)
+    start_time = time.time()
+    save_interval = 200
+
+    remaining = [v for v in variants if v['rcv_accession'] not in done_rcvs]
+
+    for batch_start in range(0, len(remaining), bs):
+        batch = remaining[batch_start:batch_start + bs]
+
+        batch_wt_ids = []
+        batch_wt_masks = []
+        batch_mut_ids = []
+        batch_mut_masks = []
+        batch_var_idxs = []
+        batch_wt_token_ids = []
+        batch_mut_token_ids = []
+        batch_labels = []
+        for v in batch:
+            wt_input, wt_mask, var_idx = tokenize_seq(v['nuc_context_wt'])
+            mut_input, mut_mask, mut_var_idx = tokenize_seq(v['nuc_context_mut'])
+            if var_idx < wt_input.shape[1] and mut_var_idx < mut_input.shape[1]:
+                batch_wt_ids.append(wt_input)
+                batch_wt_masks.append(wt_mask)
+                batch_mut_ids.append(mut_input)
+                batch_mut_masks.append(mut_mask)
+                batch_var_idxs.append(var_idx)
+                batch_wt_token_ids.append(wt_input[0, var_idx].item())
+                batch_mut_token_ids.append(mut_input[0, mut_var_idx].item())
+                batch_labels.append(v)
+
+        if not batch_wt_ids:
+            continue
+
+        max_len = max(t.shape[1] for t in batch_wt_ids)
+        padded = torch.zeros(len(batch_wt_ids), max_len, dtype=torch.long)
+        attn_mask = torch.zeros(len(batch_wt_ids), max_len, dtype=torch.long)
+        for i, (ids, mask) in enumerate(zip(batch_wt_ids, batch_wt_masks)):
+            padded[i, :ids.shape[1]] = ids[0]
+            attn_mask[i, :mask.shape[1]] = mask[0]
+
+        masked = padded.to(device).clone()
+        attention = attn_mask.to(device)
+        for i, var_idx in enumerate(batch_var_idxs):
+            if var_idx < masked.shape[1]:
+                masked[i, var_idx] = mask_token_id
+
+        with torch.no_grad():
+            out = model(input_ids=masked, attention_mask=attention)
+            logits = out.logits.cpu()
+
+        for i, v in enumerate(batch_labels):
+            var_idx = batch_var_idxs[i]
+            if var_idx >= logits.shape[1]:
+                continue
+
+            probs = F.softmax(logits[i, var_idx], dim=0)
+
+            wt_tok_id = batch_wt_token_ids[i]
+            mut_tok_id = batch_mut_token_ids[i]
+
+            score = float(probs[wt_tok_id]) - float(probs[mut_tok_id])
+
+            results.append({
+                'rcv_accession': v['rcv_accession'],
+                'gene_symbol': v['gene_symbol'],
+                'protein_position': v['protein_position'],
+                'wt_aa': v['wt_aa'], 'mut_aa': v['mut_aa'],
+                'cosine_distance': score,
+                'label': v['label'],
+            })
+            processed += 1
+
+        done_rcvs.update(v['rcv_accession'] for v in batch)
+
+        if processed % save_interval < bs:
+            elapsed = time.time() - start_time
+            rate = processed / elapsed if elapsed > 0 else 0
+            eta = (total - processed) / rate if rate > 0 else 0
+            print(f"  [genalm_mlm] {processed}/{total} ({100*processed/total:.1f}%) "
+                  f"rate={rate:.1f}/s ETA={eta/60:.1f}min")
+            with open(checkpoint_path, 'wb') as f:
+                pickle.dump({'results': results}, f)
+
+    with open(checkpoint_path, 'wb') as f:
+        pickle.dump({'results': results}, f)
+
+    with open(results_path, 'w', newline='') as f:
+        writer = csv.DictWriter(f, fieldnames=[
+            'rcv_accession', 'gene_symbol', 'protein_position',
+            'wt_aa', 'mut_aa', 'cosine_distance', 'label'
+        ], delimiter='\t')
+        writer.writeheader()
+        writer.writerows(results)
+
+    elapsed = time.time() - start_time
+    print(f"  [genalm_mlm] Done: {len(results)} variants in {elapsed/60:.1f} min")
+    print(f"  Results: {results_path}")
+
+    del model
+    torch.cuda.empty_cache()
+    return results_path
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--model', required=True, choices=[
         'esm1b', 'esm2', 'esm3', 'prott5', 'esm1b_mlm', 'esm2_mlm',
         'dnabert2', 'hyenadna', 'ntv2',
         'protbert', 'esm1v', 'ankh', 'dnabert1', 'genalm', 'caduceus',
+        'protbert_mlm', 'prott5_mlm', 'esm3_mlm', 'ankh_mlm', 'esm1v_mlm',
+        'ntv2_mlm', 'dnabert1_mlm', 'dnabert2_mlm', 'genalm_mlm',
     ])
     parser.add_argument('--device', default='cuda')
     parser.add_argument('--batch_size', type=int, default=None)
@@ -1668,7 +2741,8 @@ def main():
 
     os.makedirs(args.checkpoint_dir, exist_ok=True)
 
-    if args.model in ('dnabert2', 'hyenadna', 'ntv2', 'dnabert1', 'genalm', 'caduceus'):
+    if args.model in ('dnabert2', 'hyenadna', 'ntv2', 'dnabert1', 'genalm', 'caduceus',
+                       'ntv2_mlm', 'dnabert1_mlm', 'dnabert2_mlm', 'genalm_mlm'):
         print(f"Loading DNA variants from {args.dna_input}...")
         variants = load_variants(args.dna_input)
         print(f"Total DNA variants: {len(variants)}")
@@ -1702,6 +2776,22 @@ def main():
             run_caduceus(variants, device=args.device,
                          checkpoint_dir=args.checkpoint_dir,
                          batch_size_override=args.batch_size)
+        elif args.model == 'ntv2_mlm':
+            run_ntv2_mlm(variants, device=args.device,
+                         checkpoint_dir=args.checkpoint_dir,
+                         batch_size_override=args.batch_size)
+        elif args.model == 'dnabert1_mlm':
+            run_dnabert1_mlm(variants, device=args.device,
+                             checkpoint_dir=args.checkpoint_dir,
+                             batch_size_override=args.batch_size)
+        elif args.model == 'dnabert2_mlm':
+            run_dnabert2_mlm(variants, device=args.device,
+                             checkpoint_dir=args.checkpoint_dir,
+                             batch_size_override=args.batch_size)
+        elif args.model == 'genalm_mlm':
+            run_genalm_mlm(variants, device=args.device,
+                           checkpoint_dir=args.checkpoint_dir,
+                           batch_size_override=args.batch_size)
     else:
         print(f"Loading variants from missense_variants.tsv...")
         variants = load_variants('missense_variants.tsv')
@@ -1741,6 +2831,26 @@ def main():
             run_ankh(variants, device=args.device,
                      checkpoint_dir=args.checkpoint_dir,
                      batch_size_override=args.batch_size)
+        elif args.model == 'protbert_mlm':
+            run_protbert_mlm(variants, device=args.device,
+                             checkpoint_dir=args.checkpoint_dir,
+                             batch_size_override=args.batch_size)
+        elif args.model == 'prott5_mlm':
+            run_prott5_mlm(variants, device=args.device,
+                           checkpoint_dir=args.checkpoint_dir,
+                           batch_size_override=args.batch_size)
+        elif args.model == 'esm3_mlm':
+            run_esm3_mlm(variants, device=args.device,
+                         checkpoint_dir=args.checkpoint_dir,
+                         batch_size_override=args.batch_size)
+        elif args.model == 'ankh_mlm':
+            run_ankh_mlm(variants, device=args.device,
+                         checkpoint_dir=args.checkpoint_dir,
+                         batch_size_override=args.batch_size)
+        elif args.model == 'esm1v_mlm':
+            run_esm_mlm('esm1v_t33_650M_UR90S_1', variants, device=args.device,
+                        checkpoint_dir=args.checkpoint_dir,
+                        batch_size_override=args.batch_size)
 
 
 if __name__ == '__main__':

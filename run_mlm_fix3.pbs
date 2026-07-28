@@ -1,0 +1,44 @@
+#!/bin/bash
+#PBS -N mlm_fix3
+#PBS -q apolloq
+#PBS -l select=1:host=gnode6:ncpus=10:ngpus=1
+#PBS -l walltime=8:00:00
+#PBS -joe
+#PBS -P external
+
+cd $PBS_O_WORKDIR
+
+eval "$(conda shell.bash hook)"
+
+echo "=== MLM fix3 started at $(date) ==="
+
+# --- ProtT5-MLM (needs prott5_env: transformers 4.39.3 + sentencepiece) ---
+conda activate prott5_env
+echo ""
+echo "=== ProtT5-MLM (prott5_env) ==="
+python run_benchmark.py --model prott5_mlm --device cuda --batch_size 16 2>&1 | tail -5
+
+# --- ESM3-MLM (needs esm3 env: esm.models API) ---
+conda activate esm3
+echo ""
+echo "=== ESM3-MLM (esm3) ==="
+python run_benchmark.py --model esm3_mlm --device cuda --batch_size 1 2>&1 | tail -5
+
+# --- DNABERT-1-MLM (needs dna_env: windowed 512 tokens) ---
+conda activate dna_env
+echo ""
+echo "=== DNABERT-1-MLM (dna_env) ==="
+python run_benchmark.py --model dnabert1_mlm --device cuda --batch_size 32 2>&1 | tail -5
+
+echo ""
+echo "=== MLM fix3 finished at $(date) ==="
+
+echo ""
+echo "Results:"
+for f in results/prott5_mlm_results.tsv results/esm3_mlm_results.tsv results/dnabert1_mlm_results.tsv; do
+    if [ -f "$f" ]; then
+        echo "  $(wc -l < $f) $f"
+    else
+        echo "  MISSING $f"
+    fi
+done

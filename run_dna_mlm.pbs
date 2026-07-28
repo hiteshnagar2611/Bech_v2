@@ -1,0 +1,48 @@
+#!/bin/bash
+#PBS -N dna_mlm
+#PBS -q apolloq
+#PBS -l select=1:host=gnode6:ncpus=10:ngpus=1
+#PBS -l walltime=8:00:00
+#PBS -joe
+#PBS -P external
+
+cd $PBS_O_WORKDIR
+
+eval "$(conda shell.bash hook)"
+conda activate dna_env
+
+echo "=== DNA MLM models started at $(date) ==="
+
+# DNABERT-1-MLM
+echo ""
+echo "=== DNABERT-1-MLM ==="
+python run_benchmark.py --model dnabert1_mlm --device cuda --batch_size 32 2>&1 | tail -5
+
+# DNABERT-2-MLM
+echo ""
+echo "=== DNABERT-2-MLM ==="
+python run_benchmark.py --model dnabert2_mlm --device cuda --batch_size 16 2>&1 | tail -5
+
+# Gena-LM-MLM
+echo ""
+echo "=== Gena-LM-MLM ==="
+python run_benchmark.py --model genalm_mlm --device cuda --batch_size 16 2>&1 | tail -5
+
+# NT-v2-MLM
+echo ""
+echo "=== NT-v2-MLM ==="
+python run_benchmark.py --model ntv2_mlm --device cuda --batch_size 16 2>&1 | tail -5
+
+echo ""
+echo "=== DNA MLM models finished at $(date) ==="
+
+# List results
+echo ""
+echo "Results:"
+for f in results/dnabert1_mlm_results.tsv results/dnabert2_mlm_results.tsv results/genalm_mlm_results.tsv results/ntv2_mlm_results.tsv; do
+    if [ -f "$f" ]; then
+        echo "  $(wc -l < $f) $f"
+    else
+        echo "  MISSING $f"
+    fi
+done

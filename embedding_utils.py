@@ -16,6 +16,8 @@ def load_esm_model(model_name='esm1b'):
         model, alphabet = esm.pretrained.esm1b_t33_650M_UR50S()
     elif model_name == 'esm2':
         model, alphabet = esm.pretrained.esm2_t33_650M_UR50D()
+    elif model_name == 'esm1v_t33_650M_UR90S_1':
+        model, alphabet = esm.pretrained.esm1v_t33_650M_UR90S_1()
     else:
         raise ValueError(f"Unknown model: {model_name}")
     model = model.eval()

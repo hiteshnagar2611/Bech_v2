@@ -1,0 +1,26 @@
+#!/bin/bash
+#PBS -N prott5_mlm_fix2
+#PBS -q apolloq
+#PBS -l select=1:host=gnode6:ncpus=10:ngpus=1
+#PBS -l walltime=4:00:00
+#PBS -joe
+#PBS -P external
+
+cd $PBS_O_WORKDIR
+
+eval "$(conda shell.bash hook)"
+conda activate prott5_env
+
+echo "=== ProtT5-MLM (encoder-only) started at $(date) ==="
+rm -f results/prott5_mlm_checkpoint.pkl results/prott5_mlm_results.tsv
+
+python run_benchmark.py --model prott5_mlm --device cuda --batch_size 8 2>&1 | tail -20
+
+echo ""
+echo "=== ProtT5-MLM finished at $(date) ==="
+
+if [ -f results/prott5_mlm_results.tsv ]; then
+    echo "Results: $(wc -l < results/prott5_mlm_results.tsv) lines"
+else
+    echo "MISSING results/prott5_mlm_results.tsv"
+fi

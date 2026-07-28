@@ -16,6 +16,16 @@ MODEL_FILES = {
     'ESM3': 'results/esm3_results.tsv',
     'ProtT5': 'results/prott5_results.tsv',
     'ESM1b-MLM': 'results/esm1b_mlm_results.tsv',
+    'ESM2-MLM': 'results/esm2_mlm_results.tsv',
+    'ESM-1v-MLM': 'results/esm1v_t33_650M_UR90S_1_mlm_results.tsv',
+    'ESM3-MLM': 'results/esm3_mlm_results.tsv',
+    'ProtBERT-MLM': 'results/protbert_mlm_results.tsv',
+    'ProtT5-MLM': 'results/prott5_mlm_results.tsv',
+    'Ankh-MLM': 'results/ankh_mlm_results.tsv',
+    'DNABERT-1-MLM': 'results/dnabert1_mlm_results.tsv',
+    'DNABERT-2-MLM': 'results/dnabert2_mlm_results.tsv',
+    'Gena-LM-MLM': 'results/genalm_mlm_results.tsv',
+    'NT-v2-MLM': 'results/ntv2_mlm_results.tsv',
     'DNABERT-2': 'results/dnabert2_results.tsv',
     'HyenaDNA': 'results/hyenadna_results.tsv',
     'NT-v2': 'results/ntv2_results.tsv',
@@ -172,6 +182,116 @@ MODEL_INFO = {
         'tokenization': 'BPE (vocab=32k)',
         'method': 'Cosine distance',
     },
+    'ESM2-MLM': {
+        'model_id': 'esm2_t36_3B_UR50S',
+        'type': 'Protein',
+        'architecture': 'Transformer Encoder (36 layers)',
+        'parameters': '3B',
+        'embed_layer': 'MLM logits (softmax layer)',
+        'embedding_dim': '33 (vocab logits)',
+        'max_input_length': '1024 tokens (~1024 aa)',
+        'tokenization': 'Amino acid (1 token = 1 residue)',
+        'method': 'Masked marginal log-likelihood',
+    },
+    'ESM-1v-MLM': {
+        'model_id': 'esm1v_t33_650M_UR90S_1',
+        'type': 'Protein',
+        'architecture': 'Transformer Encoder (33 layers)',
+        'parameters': '650M',
+        'embed_layer': 'MLM logits (softmax layer)',
+        'embedding_dim': '33 (vocab logits)',
+        'max_input_length': '1024 tokens (~1022 aa)',
+        'tokenization': 'Amino acid (1 token = 1 residue)',
+        'method': 'Masked marginal log-likelihood',
+    },
+    'ESM3-MLM': {
+        'model_id': 'esm3-open',
+        'type': 'Protein',
+        'architecture': 'Transformer Encoder (multimodal)',
+        'parameters': '1.4B',
+        'embed_layer': 'MLM logits (sequence track)',
+        'embedding_dim': '64 (seq logits)',
+        'max_input_length': '2048 tokens',
+        'tokenization': 'Amino acid (1 token = 1 residue)',
+        'method': 'Masked marginal log-likelihood',
+    },
+    'ProtBERT-MLM': {
+        'model_id': 'prot_bert_bfd',
+        'type': 'Protein',
+        'architecture': 'BERT Encoder (30 layers)',
+        'parameters': '345M',
+        'embed_layer': 'MLM logits (softmax layer)',
+        'embedding_dim': '30 (vocab logits)',
+        'max_input_length': '2048 tokens (~2048 aa)',
+        'tokenization': 'Character-level AA (space-separated)',
+        'method': 'Masked marginal log-likelihood',
+    },
+    'ProtT5-MLM': {
+        'model_id': 'prot_t5_xl_uniref50',
+        'type': 'Protein',
+        'architecture': 'T5 Encoder-Decoder (24 layers)',
+        'parameters': '3B',
+        'embed_layer': 'Decoder output logits',
+        'embedding_dim': '32 (vocab logits)',
+        'max_input_length': '1024 tokens (~1024 aa)',
+        'tokenization': 'Spaced AA ("M K T A Y...")',
+        'method': 'Masked marginal log-likelihood',
+    },
+    'Ankh-MLM': {
+        'model_id': 'ankh-large',
+        'type': 'Protein',
+        'architecture': 'T5 Encoder-Decoder (48 layers)',
+        'parameters': '1.5B',
+        'embed_layer': 'Decoder output logits',
+        'embedding_dim': '144 (vocab logits)',
+        'max_input_length': '512 tokens',
+        'tokenization': 'SentencePiece (vocab=144)',
+        'method': 'Masked marginal log-likelihood',
+    },
+    'DNABERT-1-MLM': {
+        'model_id': 'DNA_bert_6',
+        'type': 'Nucleotide',
+        'architecture': 'BERT Encoder (12 layers)',
+        'parameters': '110M',
+        'embed_layer': 'MLM logits (softmax layer)',
+        'embedding_dim': 'vocab logits',
+        'max_input_length': '512 tokens (~3072 bp)',
+        'tokenization': '6-mer k-mer (1 token = 6 bp)',
+        'method': 'Masked marginal log-likelihood',
+    },
+    'DNABERT-2-MLM': {
+        'model_id': 'DNABERT-2-117M',
+        'type': 'Nucleotide',
+        'architecture': 'BERT Encoder',
+        'parameters': '117M',
+        'embed_layer': 'MLM logits (softmax layer)',
+        'embedding_dim': 'vocab logits',
+        'max_input_length': '512 BPE tokens (~2000 bp)',
+        'tokenization': 'BPE (variable-length subwords)',
+        'method': 'Masked marginal log-likelihood',
+    },
+    'Gena-LM-MLM': {
+        'model_id': 'gena-lm-bert-base',
+        'type': 'Nucleotide',
+        'architecture': 'BERT Encoder (Pre-LN, 12 layers)',
+        'parameters': '110M',
+        'embed_layer': 'MLM logits (softmax layer)',
+        'embedding_dim': 'vocab logits',
+        'max_input_length': '512 tokens (~4500 bp)',
+        'tokenization': 'BPE (vocab=32k)',
+        'method': 'Masked marginal log-likelihood',
+    },
+    'NT-v2-MLM': {
+        'model_id': 'nucleotide-transformer-v2-500m-multi-species',
+        'type': 'Nucleotide',
+        'architecture': 'Transformer Encoder (ESM-based)',
+        'parameters': '500M',
+        'embed_layer': 'MLM logits (softmax layer)',
+        'embedding_dim': 'vocab logits',
+        'max_input_length': '2048 tokens (~12,288 bp)',
+        'tokenization': '6-mer (1 token = 6 bp)',
+        'method': 'Masked marginal log-likelihood',
+    },
 }
 
 
@@ -189,6 +309,16 @@ COLORS = {
     'Ankh': '#e74c3c',
     'DNABERT-1': '#3498db',
     'Gena-LM': '#2ecc71',
+    'ESM2-MLM': '#ff7f0e',
+    'ESM-1v-MLM': '#bcbd22',
+    'ESM3-MLM': '#98df8a',
+    'ProtBERT-MLM': '#17becf',
+    'ProtT5-MLM': '#ff9896',
+    'Ankh-MLM': '#c49c94',
+    'DNABERT-1-MLM': '#aec7e8',
+    'DNABERT-2-MLM': '#f7b6d2',
+    'Gena-LM-MLM': '#98df8a',
+    'NT-v2-MLM': '#c5b0d5',
 }
 
 
@@ -352,6 +482,94 @@ def plot_roc_curves(all_dfs, output_dir):
     sns.despine()
     plt.tight_layout()
     plt.savefig(os.path.join(output_dir, 'roc_curves.png'), dpi=300)
+    plt.close()
+
+
+def plot_cosine_vs_mlm_comparison(all_metrics, output_dir):
+    cosine_models = {k: v for k, v in all_metrics.items() if not k.endswith('-MLM')}
+    mlm_models = {k: v for k, v in all_metrics.items() if k.endswith('-MLM')}
+
+    base_names = []
+    for k in cosine_models:
+        base = k
+        mlm_key = f'{base}-MLM'
+        if mlm_key in mlm_models:
+            base_names.append(base)
+
+    if not base_names:
+        print("No cosine+MLM pairs found for comparison plot")
+        return
+
+    x = np.arange(len(base_names))
+    width = 0.35
+
+    fig, ax = plt.subplots(figsize=(12, 5))
+    cosine_aurocs = [cosine_models[b]['AUROC'] for b in base_names]
+    mlm_aurocs = [mlm_models[f'{b}-MLM']['AUROC'] for b in base_names]
+
+    bars1 = ax.bar(x - width/2, cosine_aurocs, width, label='Cosine Distance',
+                   color='#3498db', edgecolor='black', linewidth=0.5)
+    bars2 = ax.bar(x + width/2, mlm_aurocs, width, label='Masked Marginal Log-Lik',
+                   color='#e74c3c', edgecolor='black', linewidth=0.5)
+
+    for bar, val in zip(bars1, cosine_aurocs):
+        ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.003,
+                f'{val:.3f}', ha='center', va='bottom', fontsize=9, fontweight='bold')
+    for bar, val in zip(bars2, mlm_aurocs):
+        ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.003,
+                f'{val:.3f}', ha='center', va='bottom', fontsize=9, fontweight='bold')
+
+    ax.set_ylabel('AUROC', fontsize=12)
+    ax.set_title('Cosine Distance vs Masked Marginal Log-Likelihood', fontsize=13)
+    ax.set_xticks(x)
+    ax.set_xticklabels(base_names, rotation=30, ha='right', fontsize=10)
+    ax.set_ylim(min(min(cosine_aurocs), min(mlm_aurocs)) - 0.05, 1.01)
+    ax.axhline(y=0.5, color='gray', linestyle='--', alpha=0.5, label='Random (0.5)')
+    ax.legend(fontsize=10)
+    sns.despine()
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_dir, 'cosine_vs_mlm_auroc.png'), dpi=300)
+    plt.close()
+
+
+def plot_roc_cosine_vs_mlm(all_dfs, output_dir):
+    cosine_dfs = {k: v for k, v in all_dfs.items() if not k.endswith('-MLM')}
+    mlm_dfs = {k: v for k, v in all_dfs.items() if k.endswith('-MLM')}
+
+    pairs = []
+    for k in cosine_dfs:
+        mlm_key = f'{k}-MLM'
+        if mlm_key in mlm_dfs:
+            pairs.append((k, mlm_key))
+
+    if not pairs:
+        print("No cosine+MLM pairs for ROC comparison")
+        return
+
+    fig, axes = plt.subplots(1, len(pairs), figsize=(6 * len(pairs), 5))
+    if len(pairs) == 1:
+        axes = [axes]
+
+    for ax, (cos_name, mlm_name) in zip(axes, pairs):
+        for name, ls in [(cos_name, '-'), (mlm_name, '--')]:
+            df = all_dfs[name]
+            y_true = df['label_binary'].values
+            y_score = df['cosine_distance'].values
+            fpr, tpr, _ = roc_curve(y_true, y_score)
+            auroc = roc_auc_score(y_true, y_score)
+            method = 'MLM' if name.endswith('-MLM') else 'Cosine'
+            ax.plot(fpr, tpr, linestyle=ls, color=COLORS.get(name, '#333'),
+                    label=f'{method} (AUROC={auroc:.3f})', linewidth=2)
+        ax.plot([0, 1], [0, 1], 'k--', alpha=0.3)
+        ax.set_xlabel('FPR', fontsize=10)
+        ax.set_ylabel('TPR', fontsize=10)
+        ax.set_title(cos_name, fontsize=11, fontweight='bold')
+        ax.legend(fontsize=9)
+        sns.despine(ax=ax)
+
+    plt.suptitle('ROC: Cosine Distance vs MLM', fontsize=13, y=1.02)
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_dir, 'roc_cosine_vs_mlm.png'), dpi=300, bbox_inches='tight')
     plt.close()
 
 
@@ -621,17 +839,28 @@ def main():
         print("No result files found! Run run_benchmark.py first.")
         return
 
+    cosine_only_dfs = {k: v for k, v in all_dfs.items() if not k.endswith('-MLM')}
+    cosine_only_metrics = {k: v for k, v in all_metrics.items() if not k.endswith('-MLM')}
+    mlm_only_dfs = {k: v for k, v in all_dfs.items() if k.endswith('-MLM')}
+    mlm_only_metrics = {k: v for k, v in all_metrics.items() if k.endswith('-MLM')}
+
     summary_df = pd.DataFrame(all_metrics).T
     summary_df.to_csv(os.path.join(output_dir, 'benchmark_summary.csv'))
     print(f"\nSummary: {os.path.join(output_dir, 'benchmark_summary.csv')}")
 
-    plot_auroc_comparison(all_metrics, output_dir)
-    plot_distance_distributions(all_dfs, output_dir)
-    plot_roc_curves(all_dfs, output_dir)
-    plot_pr_curves(all_dfs, output_dir)
-    plot_boxplot(all_dfs, output_dir)
-    per_gene_analysis(all_dfs, output_dir)
-    plot_model_info(all_metrics, output_dir)
+    print("\n--- Cosine Distance Plots ---")
+    plot_auroc_comparison(cosine_only_metrics, output_dir)
+    plot_distance_distributions(cosine_only_dfs, output_dir)
+    plot_roc_curves(cosine_only_dfs, output_dir)
+    plot_pr_curves(cosine_only_dfs, output_dir)
+    plot_boxplot(cosine_only_dfs, output_dir)
+    per_gene_analysis(cosine_only_dfs, output_dir)
+    plot_model_info(cosine_only_metrics, output_dir)
+
+    print("\n--- Combined Cosine vs MLM Plots ---")
+    plot_cosine_vs_mlm_comparison(all_metrics, output_dir)
+    plot_roc_cosine_vs_mlm(all_dfs, output_dir)
+
     plot_data_analysis(output_dir)
 
     print(f"\nAll plots saved to {output_dir}/")

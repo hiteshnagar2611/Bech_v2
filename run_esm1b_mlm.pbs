@@ -2,24 +2,25 @@
 #PBS -N esm1b_mlm
 #PBS -q apolloq
 #PBS -l select=1:host=gnode6:ncpus=10:ngpus=1
-#PBS -l walltime=720:00:00
+#PBS -l walltime=2:00:00
 #PBS -joe
 #PBS -P external
 
 cd $PBS_O_WORKDIR
+
 eval "$(conda shell.bash hook)"
-
-echo "=== Job started at $(date) ==="
-nvidia-smi --query-gpu=index,name,memory.used --format=csv
-
-echo ""
-echo "=== ESM1b masked marginal log-likelihood ==="
 conda activate esm_meta
-python run_benchmark.py --model esm1b_mlm --device cuda --batch_size 32
+
+echo "=== ESM1b-MLM started at $(date) ==="
+rm -f results/esm1b_mlm_checkpoint.pkl results/esm1b_mlm_results.tsv
+
+python run_benchmark.py --model esm1b_mlm --device cuda --batch_size 16 2>&1 | tail -10
 
 echo ""
-echo "=== Re-run analysis ==="
-python analysis.py
+echo "=== ESM1b-MLM finished at $(date) ==="
 
-echo ""
-echo "=== Job finished at $(date) ==="
+if [ -f results/esm1b_mlm_results.tsv ]; then
+    echo "Results: $(wc -l < results/esm1b_mlm_results.tsv) lines"
+else
+    echo "MISSING results/esm1b_mlm_results.tsv"
+fi

@@ -1,0 +1,58 @@
+#!/bin/bash
+#PBS -N protein_mlm
+#PBS -q apolloq
+#PBS -l select=1:host=gnode6:ncpus=10:ngpus=1
+#PBS -l walltime=8:00:00
+#PBS -joe
+#PBS -P external
+
+cd $PBS_O_WORKDIR
+
+eval "$(conda shell.bash hook)"
+conda activate esm_meta
+
+echo "=== Protein MLM models started at $(date) ==="
+
+# ESM2-MLM (reuses run_esm_mlm)
+echo ""
+echo "=== ESM2-MLM ==="
+python run_benchmark.py --model esm2_mlm --device cuda --batch_size 32 2>&1 | tail -5
+
+# ESM-1v-MLM (reuses run_esm_mlm)
+echo ""
+echo "=== ESM-1v-MLM ==="
+python run_benchmark.py --model esm1v_mlm --device cuda --batch_size 32 2>&1 | tail -5
+
+# ProtBERT-MLM
+echo ""
+echo "=== ProtBERT-MLM ==="
+python run_benchmark.py --model protbert_mlm --device cuda --batch_size 32 2>&1 | tail -5
+
+# ProtT5-MLM
+echo ""
+echo "=== ProtT5-MLM ==="
+python run_benchmark.py --model prott5_mlm --device cuda --batch_size 16 2>&1 | tail -5
+
+# ESM3-MLM
+echo ""
+echo "=== ESM3-MLM ==="
+python run_benchmark.py --model esm3_mlm --device cuda --batch_size 4 2>&1 | tail -5
+
+# Ankh-MLM
+echo ""
+echo "=== Ankh-MLM ==="
+python run_benchmark.py --model ankh_mlm --device cuda --batch_size 16 2>&1 | tail -5
+
+echo ""
+echo "=== Protein MLM models finished at $(date) ==="
+
+# List results
+echo ""
+echo "Results:"
+for f in results/esm2_mlm_results.tsv results/esm1v_mlm_results.tsv results/protbert_mlm_results.tsv results/prott5_mlm_results.tsv results/esm3_mlm_results.tsv results/ankh_mlm_results.tsv; do
+    if [ -f "$f" ]; then
+        echo "  $(wc -l < $f) $f"
+    else
+        echo "  MISSING $f"
+    fi
+done
