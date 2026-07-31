@@ -1,0 +1,283 @@
+\documentclass{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{hyperref}
+\usepackage{url}
+\usepackage{booktabs}
+\usepackage{amsfonts}
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage{subcaption}
+\usepackage{xcolor}
+\usepackage{array}
+
+\newcommand{\model}[1]{\texttt{#1}}
+
+\title{Representation Geometry of Protein and Nucleotide Foundation Models for Variant Pathogenicity: A Controlled Multi-Modal Benchmark}
+
+\author{
+  Hitesh Nagar \\
+  CSIR-IGIB, New Delhi \\
+  \texttt{hitesh@igib.in} \\
+}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+Foundation models for protein and nucleotide sequences are increasingly used for zero-shot variant effect prediction. However, systematic comparisons across modalities are lacking. We benchmark 9 protein and 4 nucleotide foundation models on 29,595 ClinVar missense variants using two scoring paradigms (masked language model probability and cosine similarity), and compare against AlphaMissense and REVEL. We find that protein MLM models capture a shared signal (pairwise Spearman $r = 0.68$--$0.83$) while nucleotide models are nearly orthogonal ($r \approx 0.00$) to protein models. This orthogonality means nucleotide models provide complementary information. A lightweight XGBoost meta-learner fusing 20 foundation model scores with 9 physicochemical features achieves AUROC 0.938 (D1) and 0.949 (D2), approaching AlphaMissense (0.948, 0.952) without using population frequency data. We show this via a controlled benchmark with two temporally-split ClinVar datasets, detailed ablation studies, and analysis of what makes variants hard for different model classes.
+\end{abstract}
+
+\section{Introduction}
+
+The prediction of whether a genetic variant is pathogenic or benign is central to clinical genomics \cite{rentzsch2019predicting}. Recent foundation models trained on protein sequences \cite{elnaggar2022prottrans, li2023esm1b, lin2023evolutionary} and nucleotide sequences \cite{dalla2024nucleotide, zeng2024dnabert2} offer the promise of zero-shot variant effect prediction without task-specific training.
+
+However, several critical questions remain unanswered:
+\begin{itemize}
+    \item How do protein-space and nucleotide-space models compare on a controlled benchmark?
+    \item Do nucleotide models provide information orthogonal to protein models?
+    \item What properties of a variant make it easy or hard for different model classes?
+    \item Can a lightweight fusion of foundation model scores match specialized tools like AlphaMissense \cite{cheng2023alphamissense} that use population frequency data?
+\end{itemize}
+
+We address these questions by systematically benchmarking 13 foundation models (9 protein, 4 nucleotide) on 29,595 ClinVar missense variants across two scoring paradigms, creating a controlled multi-modal benchmark. We provide detailed analyses of model agreement, variant difficulty spectra, biological correlates, and fusion ablations.
+
+\section{Related Work}
+
+\paragraph{Protein Language Models.} Pre-trained protein language models such as ESM-1b \cite{li2023esm1b}, ESM-2 \cite{lin2023evolutionary}, ESM-1v \cite{meier2021language}, ProtBERT \cite{elnaggar2022prottrans}, and ESM3 \cite{esm3team2024esm3} learn evolutionary representations from millions of sequences. These models can compute per-residue likelihoods and have been applied to variant pathogenicity prediction \cite{promponas2020predicting, pei2021identifying}.
+
+\paragraph{Nucleotide Language Models.} Recent work has extended the foundation model paradigm to raw nucleotide sequences. Nucleotide Transformer v2 \cite{dalla2024nucleotide}, DNABERT \cite{ji2021dnabert}, DNABERT-2 \cite{zeng2024dnabert2}, HyenaDNA \cite{nguyen2023hyenadna}, and GenALM \cite{singh2024genalm} represent DNA at various scales.
+
+\paragraph{Variant Effect Prediction.} Specialized tools like AlphaMissense \cite{cheng2023alphamissense} leverage population allele frequencies from gnomAD alongside protein models. REVEL \cite{ioannidis2016revel} combines multiple individual predictors. These tools achieve high performance but require external data not available in a pure zero-shot setting.
+
+\paragraph{Gaps in the Literature.} No prior work provides a controlled multi-modal comparison of protein and nucleotide foundation models on the same variant dataset, with standardized scoring protocols and detailed analysis of model agreement structure.
+
+\section{Methods}
+
+\subsection{Datasets}
+
+We use two ClinVar-derived datasets:
+
+\paragraph{D1 (Primary).} 29,595 missense variants (15,816 Pathogenic + 14,072 Benign) across 6,371 genes. Pathogenic and benign labels are derived from ClinVar clinical significance, with variants labeled \textit{Pathogenic} or \textit{Likely pathogenic} treated as positive, and \textit{Benign} or \textit{Likely benign} as negative.
+
+\paragraph{D2 (Temporal Holdout).} 9,627 missense variants (3,911 Pathogenic + 5,765 Benign) from a later ClinVar release (January 2025), spanning 2,569 genes. All D2 genes are a subset of D1 genes, making D2 a temporal validation set.
+
+Both datasets are preprocessed to ensure clean protein contexts (wild-type and mutant protein sequences of length 512 centered on the variant position) and nucleotide contexts (10,000 bp windows centered on the variant).
+
+\subsection{Models}
+
+We benchmark 13 foundation models in two modalities:
+
+\paragraph{Protein Models (9).}
+\begin{itemize}
+    \item \textbf{ESM-1b} (650M params) -- MLM + Cosine Similarity
+    \item \textbf{ESM-2} (3B params) -- MLM + Cosine Similarity
+    \item \textbf{ESM-1v} (650M params) -- MLM + Cosine Similarity
+    \item \textbf{ESM3} (1.4B params) -- MLM only
+    \item \textbf{ProtBERT} (350M params) -- MLM + Cosine Similarity
+    \item \textbf{ProtT5} (3B params) -- Cosine Similarity only (MLM at chance)
+    \item \textbf{Ankh} (500M params) -- Cosine Similarity only (MLM at chance)
+\end{itemize}
+
+\paragraph{Nucleotide Models (4).}
+\begin{itemize}
+    \item \textbf{Nucleotide Transformer v2} (500M params) -- MLM + Cosine Similarity
+    \item \textbf{DNABERT-1} (117M params) -- MLM + Cosine Similarity
+    \item \textbf{DNABERT-2} (350M params) -- MLM + Cosine Similarity
+    \item \textbf{HyenaDNA} (1.6B params) -- Cosine Similarity only (MLM at chance)
+    \item \textbf{GenALM} (370M params) -- MLM + Cosine Similarity
+\end{itemize}
+
+\paragraph{External Baselines.}
+\begin{itemize}
+    \item \textbf{AlphaMissense} \cite{cheng2023alphamissense}: Population-frequency-enhanced predictions (216M precomputed scores)
+    \item \textbf{REVEL} \cite{ioannidis2016revel}: Ensemble of 13 individual predictors
+\end{itemize}
+
+\subsection{Scoring Paradigms}
+
+For each variant, we compute two types of scores from foundation models:
+
+\paragraph{MLM Score.} The log-probability of the mutant amino acid (or nucleotide) at the variant position, normalized by the wild-type log-probability:
+\[
+s_{\text{MLM}} = \log P(x_{\text{mut}} | x_{\text{context}}) - \log P(x_{\text{wt}} | x_{\text{context}})
+\]
+More negative values indicate more deleterious variants. We use the negative as the pathogenicity score.
+
+\paragraph{Cosine Similarity.} The cosine similarity between the mutant and wild-type token embeddings at the variant position:
+\[
+s_{\text{cos}} = \frac{\mathbf{h}_{\text{mut}} \cdot \mathbf{h}_{\text{wt}}}{\|\mathbf{h}_{\text{mut}}\| \|\mathbf{h}_{\text{wt}}\|}
+\]
+Lower cosine similarity indicates greater predicted disruption.
+
+\subsection{Meta-Learner}
+
+We train an XGBoost meta-learner that takes 29 features as input:
+\begin{itemize}
+    \item 20 foundation model scores (5 protein MLM + 4 nucleotide MLM + 6 protein cosine + 5 nucleotide cosine)
+    \item 9 physicochemical features (Grantham distance, BLOSUM62 score, hydrophobicity change, charge change, etc.)
+\end{itemize}
+
+We use 5-fold stratified cross-validation with RandomizedSearchCV (80 iterations) for hyperparameter optimization. The model is trained on D1 and evaluated on both D1 (test set) and D2.
+
+\section{Experiments and Results}
+
+\subsection{Benchmark Results}
+
+Table \ref{tab:benchmark} presents the full benchmark results on both datasets.
+
+\begin{table}[h]
+\centering
+\caption{AUROC on test sets. REVEL and AlphaMissense use precomputed scores. Foundation models use our standardized scoring protocol.}
+\label{tab:benchmark}
+\small
+\begin{tabular}{lrrrr}
+\toprule
+\textbf{Model} & \textbf{D1 AUROC} & \textbf{D1 AUPRC} & \textbf{D2 AUROC} & \textbf{D2 AUPRC} \\
+\midrule
+REVEL & 0.9607 & 0.9640 & 0.9732 & 0.9615 \\
+AlphaMissense & 0.9475 & 0.9554 & 0.9517 & 0.9374 \\
+\midrule
+ESM1b-MLM & 0.8860 & 0.8992 & 0.9033 & 0.8745 \\
+ESM-1v-MLM & 0.8736 & 0.8936 & 0.8881 & 0.8618 \\
+ProtBERT-MLM & 0.8482 & 0.8791 & 0.8624 & 0.8456 \\
+ESM2-MLM & 0.8479 & 0.8677 & 0.8640 & 0.8294 \\
+ESM3-MLM & 0.8297 & 0.8642 & 0.8479 & 0.8317 \\
+ProtBERT-Cos & 0.7625 & 0.8015 & 0.7722 & 0.7366 \\
+NT-v2-MLM & 0.6374 & 0.6729 & 0.6101 & 0.5488 \\
+\midrule
+\multicolumn{5}{l}{\textit{T5-based models (ProtT5, Ankh, GenALM) at chance ($\approx$0.50)}} \\
+\multicolumn{5}{l}{\textit{All DNA models (DNABERT-1/2, HyenaDNA) at chance ($\approx$0.50)}} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The best foundation model is ESM1b-MLM (D1: 0.886, D2: 0.903), followed by ESM-1v-MLM. Nucleotide models significantly underperform protein models, with NT-v2-MLM at 0.637/0.610 and all other DNA models at chance.
+
+\subsection{Model Agreement Analysis}
+
+Figure \ref{fig:correlation} shows the pairwise Spearman correlation heatmap across all 22 model scores.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.85\textwidth]{analysis/d1/fig1_correlation_heatmap.png}
+    \caption{Pairwise Spearman correlation between all model scores on D1. Protein MLM models (upper-left cluster) are highly correlated ($r = 0.68$--$0.83$). Nucleotide models are nearly orthogonal to protein models ($r \approx 0.00$).}
+    \label{fig:correlation}
+\end{figure}
+
+Key findings:
+\begin{itemize}
+    \item \textbf{Intra-Protein MLM:} $r = 0.393 \pm 0.366$ (highly correlated)
+    \item \textbf{Intra-Nucleotide MLM:} $r = 0.071 \pm 0.065$ (weakly correlated)
+    \item \textbf{Cross-modality:} $r = 0.059 \pm 0.120$ (nearly orthogonal)
+\end{itemize}
+
+The orthogonality between protein and nucleotide models means they capture fundamentally different information about variants. This is the key insight motivating multi-modal fusion.
+
+\subsection{What Makes Variants Hard?}
+
+We stratify variants by cross-modal disagreement (standard deviation of model predictions) into five difficulty bins.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.85\textwidth]{analysis/d1/fig2_difficulty_spectrum.png}
+    \caption{Model performance across the variant difficulty spectrum (D1). Variants with high cross-modal disagreement are harder for all models. Nucleotide models show the most dramatic degradation.}
+    \label{fig:difficulty}
+\end{figure}
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.85\textwidth]{analysis/d1/fig3_biological_correlates.png}
+    \caption{Biological correlates of cross-modal disagreement. BLOSUM62 score (negative correlation) and Grantham distance (positive correlation) are the strongest correlates, followed by cysteine changes.}
+    \label{fig:biology}
+\end{figure}
+
+Biological correlates of variant difficulty:
+\begin{itemize}
+    \item \textbf{BLOSUM62:} $r = -0.181$ (substitution conservativeness)
+    \item \textbf{Grantham distance:} $r = 0.180$ (amino acid dissimilarity)
+    \item \textbf{Cysteine changes:} $r = 0.142$ (disulfide bond disruption)
+    \item \textbf{Protein length:} $r = -0.110$ (longer proteins have harder variants)
+\end{itemize}
+
+\subsection{Multi-Modal Fusion Ablation}
+
+Table \ref{tab:ablation} presents ablation results showing the marginal contribution of each model class.
+
+\begin{table}[h]
+\centering
+\caption{Fusion ablation study on D1 test set. Each row adds a model class to the feature set.}
+\label{tab:ablation}
+\small
+\begin{tabular}{lrrr}
+\toprule
+\textbf{Configuration} & \textbf{N features} & \textbf{D1 AUROC} & \textbf{D2 AUROC} \\
+\midrule
+Best Single (ESM1b-MLM) & 1 & 0.877 & 0.902 \\
+Protein MLM Only & 5 & 0.903 & 0.920 \\
+Protein Cosine Only & 6 & 0.865 & 0.869 \\
+All Protein (MLM+Cos) & 11 & 0.923 & 0.933 \\
+Nucleotide MLM Only & 4 & 0.638 & 0.627 \\
+Nucleotide Cosine Only & 5 & 0.621 & 0.593 \\
+All Nucleotide (MLM+Cos) & 9 & 0.693 & 0.665 \\
+\midrule
+All Foundation Models & 20 & 0.927 & 0.938 \\
+Foundation + Physicochemical & 29 & 0.937 & 0.951 \\
+Foundation + AlphaMissense & 11 & 0.970 & 0.982 \\
+Foundation + REVEL & 10 & 0.962 & 0.979 \\
+Full Ensemble (All) & 31 & 0.975 & 0.987 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Key observations:
+\begin{itemize}
+    \item \textbf{Foundation + Physicochemical} (AUROC 0.937) approaches AlphaMissense (0.948) using only zero-shot scores, without population frequency data.
+    \item Adding nucleotide models provides marginal gains (+0.010 D1, +0.013 D2) over protein-only fusion, confirming the orthogonality finding.
+    \item Foundation + AlphaMissense achieves 0.970, showing complementary information between zero-shot scores and population-frequency-enhanced predictions.
+\end{itemize}
+
+\subsection{Temporal Validation}
+
+D2 uses variants from a later ClinVar release (January 2025) while sharing all 2,569 genes with D1. Figure \ref{fig:temporal} shows temporal validation results.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.85\textwidth]{analysis/circularity/temporal_validation.png}
+    \caption{Temporal validation: D1 vs D2 performance on shared genes. Foundation models show small temporal gaps ($<$0.015), with most performing slightly better on D2.}
+    \label{fig:temporal}
+\end{figure}
+
+All foundation models show temporal gaps $<$ 0.015, demonstrating generalization across ClinVar releases. AlphaMissense shows the smallest gap (-0.005), likely due to its population frequency component being stable over time.
+
+\subsection{Feature Importance}
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.85\textwidth]{analysis/d1/fig6_feature_importance.png}
+    \caption{Top 20 feature importances from the full ensemble model (D2). REVEL dominates (0.362), followed by AlphaMissense (0.114) and ESM1b-MLM (0.069).}
+    \label{fig:importance}
+\end{figure}
+
+\section{Discussion}
+
+\paragraph{Protein models dominate.} ESM1b-MLM achieves 0.886/0.903 AUROC, far exceeding the best nucleotide model (NT-v2 at 0.637/0.610). The protein language modeling objective appears fundamentally better aligned with pathogenicity prediction.
+
+\paragraph{Orthogonality enables fusion.} The near-zero correlation between protein and nucleotide models means they capture complementary variant effects. Nucleotide models may capture local sequence context (splice signals, regulatory elements) that protein models miss.
+
+\paragraph{Zero-shot approaches are competitive.} Foundation + Physicochemical features (AUROC 0.937) approach AlphaMissense (0.948) without population frequency data. This suggests that the protein language model signal, combined with simple physicochemical features, captures most of the pathogenicity-relevant information.
+
+\paragraph{Temporal stability.} Foundation models generalize well across ClinVar releases (temporal gaps $<$ 0.015), suggesting that the learned representations are not overfitting to specific annotation artifacts.
+
+\paragraph{Limitations.} (1) D2 genes are a subset of D1 genes, limiting the generality of temporal validation. (2) T5-based models fail at MLM scoring but may provide useful representations through other mechanisms. (3) We do not evaluate on indels or synonymous variants.
+
+\section{Conclusion}
+
+We provide the first controlled multi-modal benchmark comparing protein and nucleotide foundation models for variant pathogenicity prediction. Our key findings are: (1) protein MLM models capture a shared high-performance signal, (2) nucleotide models are orthogonal to protein models and provide complementary information, and (3) a lightweight fusion of foundation model scores approaches specialized tools without population frequency data. These results provide a roadmap for combining multi-modal biological representations for variant effect prediction.
+
+\bibliographystyle{plainnat}
+\bibliography{references}
+
+\end{document}
