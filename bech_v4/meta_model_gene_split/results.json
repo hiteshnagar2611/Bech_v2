@@ -1,0 +1,57 @@
+{
+  "split": "gene_disjoint",
+  "train_genes": 5096,
+  "test_genes": 1275,
+  "gene_overlap": 0,
+  "best_params": {
+    "colsample_bytree": 0.7412604748213212,
+    "gamma": 2.4651282888590247,
+    "learning_rate": 0.034152479246625296,
+    "max_depth": 7,
+    "min_child_weight": 3,
+    "n_estimators": 595,
+    "reg_alpha": 1e-08,
+    "reg_lambda": 0.01,
+    "subsample": 0.8690073824308153
+  },
+  "cv_summary": {
+    "AUROC_mean": 0.9412984965369112,
+    "AUROC_std": 0.004375616275051095,
+    "MCC_mean": 0.7457821829891466,
+    "MCC_std": 0.011520564615209523
+  },
+  "test_metrics": {
+    "AUROC": 0.9328502577586033,
+    "AUPRC": 0.9441214458828829,
+    "MCC": 0.7233296102589115,
+    "F1": 0.8747537292428933,
+    "Accuracy": 0.8626966985498303,
+    "TP": 3061,
+    "FP": 342,
+    "FN": 547,
+    "TN": 2532,
+    "Optimal_Threshold": 0.5467489361763
+  },
+  "individual_aurocs": {
+    "ESM1b-MLM": 0.8820683025581442,
+    "ESM-1v-MLM": 0.8727384402094163,
+    "ESM2-MLM": 0.844193275748472,
+    "ESM3-MLM": 0.8333232073780219,
+    "ProtBERT-MLM": 0.8570311547678011,
+    "NT-v2-MLM": 0.6391577249659381,
+    "ProtBERT-Cos": 0.7792242785305059,
+    "NT-v2-Cos": 0.6225535209778934,
+    "Meta-Learner (Ours)": 0.9328502577586033
+  },
+  "d2_individual_aurocs": {
+    "ESM1b-MLM": 0.9033458268990797,
+    "ESM-1v-MLM": 0.8881328038947237,
+    "ESM2-MLM": 0.8639687330069469,
+    "ESM3-MLM": 0.8477904260100861,
+    "ProtBERT-MLM": 0.8624268919849143,
+    "NT-v2-MLM": 0.6100653206784155,
+    "ProtBERT-Cos": 0.7722266776170592,
+    "NT-v2-Cos": 0.6039072066485467,
+    "Meta-Learner (Ours)": 0.9804617665006894
+  }
+}
