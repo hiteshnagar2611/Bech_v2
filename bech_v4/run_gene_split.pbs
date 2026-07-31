@@ -1,0 +1,25 @@
+#!/bin/bash
+#PBS -N v4_gene_split
+#PBS -q apolloq
+#PBS -l select=1:host=gnode6:ncpus=10:ngpus=1
+#PBS -l walltime=1:30:00
+#PBS -joe
+#PBS -P external
+
+cd $PBS_O_WORKDIR
+eval "$(conda shell.bash hook)"
+conda activate esm_meta
+
+echo "=== Gene-Split Meta-Learner Started at $(date) ==="
+
+echo ""
+echo "Step 1: Creating gene-disjoint split..."
+python3 split_genes.py dataset1_clinvar_only 2>&1
+
+echo ""
+echo "Step 2: Training meta-learner on gene-disjoint split..."
+python3 train_meta_gene_split.py dataset1_clinvar_only dataset2_jan2025 2>&1
+
+echo ""
+echo "=== Finished at $(date) ==="
+cat dataset1_clinvar_only/meta_model_gene_split/results.json 2>&1

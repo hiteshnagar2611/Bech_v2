@@ -1,0 +1,11 @@
+{
+  "train_genes": 5096,
+  "test_genes": 1275,
+  "gene_overlap": 0,
+  "train_variants": 23113,
+  "test_variants": 6482,
+  "train_pathogenic": 11932,
+  "train_benign": 11181,
+  "test_pathogenic": 3608,
+  "test_benign": 2874
+}
